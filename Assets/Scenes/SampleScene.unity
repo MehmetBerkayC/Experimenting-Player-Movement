@@ -3078,7 +3078,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &414567916
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -5172,7 +5172,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &589772932
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -5884,7 +5884,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &657631444
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -6132,7 +6132,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &667750198
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -6526,7 +6526,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &712211643
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -7402,7 +7402,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &759462906
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -7619,7 +7619,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &771920241
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -8826,7 +8826,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &843405407
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -9373,7 +9373,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &1017420814
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -9621,7 +9621,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &1026764668
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -10825,7 +10825,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &1167802564
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -11537,7 +11537,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &1277513067
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -11785,7 +11785,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &1312710888
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -13453,7 +13453,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &1510779019
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -14197,7 +14197,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &1573379039
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -15073,7 +15073,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &1758044068
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -15785,7 +15785,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &1806428610
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -17125,7 +17125,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &1942452681
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -17373,7 +17373,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &1978824785
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -17949,7 +17949,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &2053937175
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -18361,7 +18361,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   maxSpeed: 10
   jumpHeight: 2
-  maxAirJumps: 0
+  maxAirJumps: 1
 --- !u!135 &2092291302
 SphereCollider:
   m_ObjectHideFlags: 0
