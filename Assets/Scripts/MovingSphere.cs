@@ -9,7 +9,7 @@ public class MovingSphere : MonoBehaviour
     [SerializeField, Range(0f, 1f)] float bounciness = 0.5f;
 
 
-    [SerializeField, Range(0f, 100f)] float maxAcceleration = 10f;
+    [SerializeField, Range(0f, 100f)] float maxAcceleration = 10f, maxAirAcceleration = 1f;
     [SerializeField, Range(0f, 100f)] float maxSpeed = 10f;
     [SerializeField, Range(0f, 10f)] float jumpHeight = 2f;
     [SerializeField, Range(0, 5)] int maxAirJumps = 0;
@@ -57,7 +57,11 @@ public class MovingSphere : MonoBehaviour
     {
         UpdateState();
 
-        float maxSpeedChange = maxAcceleration * Time.deltaTime;
+        // if onground use acceleration else air acceleration
+        float acceleration = onGround ? maxAcceleration : maxAirAcceleration;
+        
+        // acceleration of the sphere
+        float maxSpeedChange = acceleration * Time.deltaTime;
 
         velocity.x = Mathf.MoveTowards(velocity.x, desiredVelocity.x, maxSpeedChange);
         velocity.z = Mathf.MoveTowards(velocity.z, desiredVelocity.z, maxSpeedChange);
@@ -97,7 +101,19 @@ public class MovingSphere : MonoBehaviour
         if (onGround || jumpPhase < maxAirJumps)
         {
             jumpPhase += 1;
-            velocity.y += Mathf.Sqrt(-2f * Physics.gravity.y * jumpHeight);
+            
+            float jumpSpeed = Mathf.Sqrt(-2f * Physics.gravity.y * jumpHeight);
+            // We don't want limitless jumpspeed which means,
+            // repeated jumping shouldn't add more speed to the movement
+            if(velocity.y > 0f) // if already jumping(on air) with velocity upwards
+            {
+                // subtract this velocity from the mew jump action(stable jump velocity)
+                // also if we're already going faster than the jump speed then we don't want a jump to slow us down,
+                // either subtract from the jumpspeed or don't change anything ensuring that the modified jump speed never goes negative
+                jumpSpeed = Mathf.Max(jumpSpeed - velocity.y, 0f);
+            }
+
+            velocity.y += jumpSpeed;
         }
     }
 
