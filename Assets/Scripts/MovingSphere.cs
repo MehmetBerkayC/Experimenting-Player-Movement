@@ -67,17 +67,13 @@ public class MovingSphere : MonoBehaviour
     // this way the sphere doesn't get jittery when colliding something
     private void FixedUpdate()
     {
+        // On ground or not
         UpdateState();
 
-        // if onground use acceleration else air acceleration
-        float acceleration = onGround ? maxAcceleration : maxAirAcceleration;
+        // Calculate velocity relative to the ground angles (won't bounce / lose grip)
+        AdjustVelocity();
         
-        // acceleration of the sphere
-        float maxSpeedChange = acceleration * Time.deltaTime;
-
-        velocity.x = Mathf.MoveTowards(velocity.x, desiredVelocity.x, maxSpeedChange);
-        velocity.z = Mathf.MoveTowards(velocity.z, desiredVelocity.z, maxSpeedChange);
-
+    
         // Jump
         if (desiredJump)
         {
@@ -128,7 +124,7 @@ public class MovingSphere : MonoBehaviour
             
             // We don't want limitless jumpspeed which means,
             // repeated jumping shouldn't add more speed to the movement
-            if(alignedSpeed > 0f) // if already jumping(on air) with velocity upwards
+            if(alignedSpeed > 0f) // if already jumping(on air) 
             {
                 // subtract this velocity from the mew jump action(stable jump velocity)
                 // also if we're already going faster than the jump speed then we don't want a jump to slow us down,
@@ -140,6 +136,33 @@ public class MovingSphere : MonoBehaviour
         }
     }
 
+    Vector3 ProjectOnContactPlane (Vector3 vector)
+    {
+        return vector - contactNormal * Vector3.Dot(vector, contactNormal);
+    }
+
+    void AdjustVelocity()
+    {
+        // Vectors aligned with the ground, but they are only of unit length when the ground is perfectly flat. So normalize to get proper directions.
+        Vector3 xAxis = ProjectOnContactPlane(Vector3.right).normalized;
+        Vector3 zAxis = ProjectOnContactPlane(Vector3.forward).normalized;
+
+        // Project the current velocity on both vectors to get the relative X and Z speeds.
+        float currentX = Vector3.Dot(velocity, xAxis);
+        float currentZ = Vector3.Dot(velocity, zAxis);
+
+        // if onground use acceleration else air acceleration
+        float acceleration = onGround ? maxAcceleration : maxAirAcceleration;
+        
+        float maxSpeedChange = acceleration * Time.deltaTime;
+
+        // Calculate new X and Z speeds relative to the ground
+        float newX = Mathf.MoveTowards(currentX, desiredVelocity.x, maxSpeedChange);
+        float newZ = Mathf.MoveTowards(currentZ, desiredVelocity.z, maxSpeedChange);
+
+        // Adjust the velocity by adding the differences between the new and old speeds along the relative axes.
+        velocity += xAxis * (newX - currentX) + zAxis * (newZ - currentZ);
+    }
     void UpdateState()
     {
         velocity = body.velocity;
