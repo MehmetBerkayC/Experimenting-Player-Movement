@@ -13,19 +13,31 @@ public class MovingSphere : MonoBehaviour
     [SerializeField, Range(0f, 100f)] float maxSpeed = 10f;
     [SerializeField, Range(0f, 10f)] float jumpHeight = 2f;
     [SerializeField, Range(0, 5)] int maxAirJumps = 0;
+    [SerializeField, Range(0f, 90f)] float maxGroundAngle = 25f;
 
     Rigidbody body;
 
     // To see which jump are we at
     int jumpPhase;
 
+    float minGroundDotProduct;
+
     Vector3 velocity, desiredVelocity;
-    
+    Vector3 contactNormal; // Slope's normal
+
     bool desiredJump, onGround;
+
+    // With OnValidate, treshold remains synchronized with the angle when we change it via the inspector while in play mode.
+    private void OnValidate()
+    {
+        // The configured angle defines the minimum result that still counts as ground.
+        minGroundDotProduct = Mathf.Cos(maxGroundAngle * Mathf.Deg2Rad); // Method takes radians
+    }
 
     private void Awake()
     {
         body = GetComponent<Rigidbody>();
+        OnValidate();
     }
 
     // Update is called once per frame
@@ -92,8 +104,17 @@ public class MovingSphere : MonoBehaviour
         for (int i = 0; i < collision.contactCount; i++)
         {
             Vector3 normal = collision.GetContact(i).normal;
+
+            /// No matter where, we jump on global Y Axis (plane's normal)
             // Assuming a Plane - Set true if normal vector from contact surface is 1(on ground)
-            onGround |= normal.y >= 0.9f; // To be sure we set it >= 0.9f
+            // onGround |= normal.y >= minGroundDotProduct; // min Angle we accept as ground
+
+            /// This way jump will be angled on the slope's Y Axis (slope's normal)
+            if (normal.y >= minGroundDotProduct)
+            {
+                onGround = true;
+                contactNormal = normal;
+            }
         }
     }
     void Jump() 
@@ -103,17 +124,19 @@ public class MovingSphere : MonoBehaviour
             jumpPhase += 1;
             
             float jumpSpeed = Mathf.Sqrt(-2f * Physics.gravity.y * jumpHeight);
+            float alignedSpeed = Vector3.Dot(velocity, contactNormal);
+            
             // We don't want limitless jumpspeed which means,
             // repeated jumping shouldn't add more speed to the movement
-            if(velocity.y > 0f) // if already jumping(on air) with velocity upwards
+            if(alignedSpeed > 0f) // if already jumping(on air) with velocity upwards
             {
                 // subtract this velocity from the mew jump action(stable jump velocity)
                 // also if we're already going faster than the jump speed then we don't want a jump to slow us down,
                 // either subtract from the jumpspeed or don't change anything ensuring that the modified jump speed never goes negative
-                jumpSpeed = Mathf.Max(jumpSpeed - velocity.y, 0f);
+                jumpSpeed = Mathf.Max(jumpSpeed - alignedSpeed, 0f);
             }
 
-            velocity.y += jumpSpeed;
+            velocity += contactNormal * jumpSpeed;
         }
     }
 
@@ -123,6 +146,10 @@ public class MovingSphere : MonoBehaviour
         if (onGround)
         {
             jumpPhase = 0;
+        }
+        else // if on air, use global Y
+        {
+            contactNormal = Vector3.up;
         }
     }
 
