@@ -83,7 +83,7 @@ public class MovingSphere : MonoBehaviour
 
         body.velocity = velocity;
 
-        onGround = false;
+        ClearState();
     }
 
     private void OnCollisionEnter(Collision collision)
@@ -109,7 +109,7 @@ public class MovingSphere : MonoBehaviour
             if (normal.y >= minGroundDotProduct)
             {
                 onGround = true;
-                contactNormal = normal;
+                contactNormal += normal;
             }
         }
     }
@@ -169,11 +169,17 @@ public class MovingSphere : MonoBehaviour
         if (onGround)
         {
             jumpPhase = 0;
+            contactNormal.Normalize();
         }
         else // if on air, use global Y
         {
             contactNormal = Vector3.up;
         }
+    }
+    void ClearState()
+    {
+        onGround = false;
+        contactNormal = Vector3.zero;
     }
 
     void BasicBouncySphereWithinArea(Vector2 playerInput)
