@@ -19,13 +19,17 @@ public class MovingSphere : MonoBehaviour
 
     // To see which jump are we at
     int jumpPhase;
+    int groundContactCount;
 
     float minGroundDotProduct;
 
     Vector3 velocity, desiredVelocity;
     Vector3 contactNormal; // Slope's normal
 
-    bool desiredJump, onGround;
+    bool desiredJump;
+    
+    // short way to define a single-statement readonly property
+    bool OnGround => groundContactCount > 0; // returns true if at least 1 contact available
 
     // With OnValidate, treshold remains synchronized with the angle when we change it via the inspector while in play mode.
     private void OnValidate()
@@ -61,6 +65,11 @@ public class MovingSphere : MonoBehaviour
         // We can prevent that by combining the check with its previous value via the boolean OR operation, or the OR assignment.
         // That way it remains true once enabled until we explicitly set it back to false.
         desiredJump |= Input.GetButtonDown("Jump");
+
+        // For Default Render Pipeline, Change color based on contacted ground count 
+        GetComponent<Renderer>().material.SetColor(
+            "_Color", Color.white * (groundContactCount * 0.25f)
+        );
     }
 
     // For the physics updates FixedUpdate is prefered
@@ -108,14 +117,14 @@ public class MovingSphere : MonoBehaviour
             /// This way jump will be angled on the slope's Y Axis (slope's normal)
             if (normal.y >= minGroundDotProduct)
             {
-                onGround = true;
+                groundContactCount += 1; 
                 contactNormal += normal;
             }
         }
     }
     void Jump() 
     {
-        if (onGround || jumpPhase < maxAirJumps)
+        if (OnGround || jumpPhase < maxAirJumps)
         {
             jumpPhase += 1;
             
@@ -152,7 +161,7 @@ public class MovingSphere : MonoBehaviour
         float currentZ = Vector3.Dot(velocity, zAxis);
 
         // if onground use acceleration else air acceleration
-        float acceleration = onGround ? maxAcceleration : maxAirAcceleration;
+        float acceleration = OnGround ? maxAcceleration : maxAirAcceleration;
         
         float maxSpeedChange = acceleration * Time.deltaTime;
 
@@ -166,10 +175,14 @@ public class MovingSphere : MonoBehaviour
     void UpdateState()
     {
         velocity = body.velocity;
-        if (onGround)
+        if (OnGround)
         {
             jumpPhase = 0;
-            contactNormal.Normalize();
+
+            if(groundContactCount > 1) // if there are multiple ground contacts
+            {
+                contactNormal.Normalize(); // normalize the accumulated vector
+            }
         }
         else // if on air, use global Y
         {
@@ -178,7 +191,7 @@ public class MovingSphere : MonoBehaviour
     }
     void ClearState()
     {
-        onGround = false;
+        groundContactCount = 0;
         contactNormal = Vector3.zero;
     }
 
