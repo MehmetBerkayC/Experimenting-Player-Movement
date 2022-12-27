@@ -14,12 +14,14 @@ public class MovingSphere : MonoBehaviour
     [SerializeField, Range(0f, 10f)] float jumpHeight = 2f;
     [SerializeField, Range(0, 5)] int maxAirJumps = 0;
     [SerializeField, Range(0f, 90f)] float maxGroundAngle = 25f;
+    [SerializeField, Range(0f, 100f)] float maxSnapSpeed = 100f;
+    [SerializeField, Min(0f)] float probeDistance = 1f; // Searching distance below sphere (for snapping)
 
     Rigidbody body;
 
     // To see which jump are we at
     int jumpPhase;
-    int groundContactCount;
+    int groundContactCount, stepsSinceLastGrounded;
 
     float minGroundDotProduct;
 
@@ -66,10 +68,9 @@ public class MovingSphere : MonoBehaviour
         // That way it remains true once enabled until we explicitly set it back to false.
         desiredJump |= Input.GetButtonDown("Jump");
 
-        // For Default Render Pipeline, Change color based on contacted ground count 
-        GetComponent<Renderer>().material.SetColor(
-            "_Color", Color.white * (groundContactCount * 0.25f)
-        );
+        /// Coloring
+        // ColorOnGroundContacts();
+        ColorOnAir();
     }
 
     // For the physics updates FixedUpdate is prefered
@@ -174,9 +175,12 @@ public class MovingSphere : MonoBehaviour
     }
     void UpdateState()
     {
+        stepsSinceLastGrounded += 1;
         velocity = body.velocity;
-        if (OnGround)
+
+        if (OnGround || SnapToGround()) // if on ground or trying to stay
         {
+            stepsSinceLastGrounded = 0;
             jumpPhase = 0;
 
             if(groundContactCount > 1) // if there are multiple ground contacts
@@ -193,6 +197,51 @@ public class MovingSphere : MonoBehaviour
     {
         groundContactCount = 0;
         contactNormal = Vector3.zero;
+    }
+
+    bool SnapToGround() 
+    {
+        // if on air more than 1 physics step set false
+        // trying to snap once right after losing contact to ground (when [0,1] we will try snapping so return true) 
+        if(stepsSinceLastGrounded > 1)
+        {
+            return false;
+        }
+
+        float speed = velocity.magnitude;
+        if(speed > maxSnapSpeed) // if at high speeds our sphere gets launched anyway
+        {
+            return false;
+        }
+
+        // Use Raycasting to see if there is ground below, get info as to what we hit
+        if(!Physics.Raycast(body.position, Vector3.down, out RaycastHit hitInfo, probeDistance))
+        {
+            return false;
+        }
+
+        // compare raycast info's normal(true surface normal) with minimum angle we count as ground
+        if (hitInfo.normal.y < minGroundDotProduct) 
+        {
+            return false;
+        }
+
+        // otherwise we are considered on ground
+        groundContactCount = 1;
+        contactNormal = hitInfo.normal;
+        // Align velocity with ground
+        float dot = Vector3.Dot(velocity, hitInfo.normal);
+
+        /* 
+         * At this point we are still floating above the ground, but gravity will take care of pulling us down to the surface.
+         * the velocity might already point somewhat down, in which case realigning it would slow convergence to the ground. 
+         * So we should only adjust the velocity when the dot product of it and the surface normal is positive.
+         */
+        if (dot > 0f) 
+        {
+            velocity = (velocity - hitInfo.normal * dot).normalized * speed;
+        }
+        return true;
     }
 
     void BasicBouncySphereWithinArea(Vector2 playerInput)
@@ -259,5 +308,21 @@ public class MovingSphere : MonoBehaviour
 
     }
 
+    // Color Spheres if multiple ground contacts present
+    void ColorOnGroundContacts()
+    {
+        // For Default Render Pipeline, Change color based on contacted ground count 
+        GetComponent<Renderer>().material.SetColor(
+            "_Color", Color.white * (groundContactCount * 0.25f)
+        );
+    }
+
+    // Color Spheres if on air
+    void ColorOnAir()
+    {
+        GetComponent<Renderer>().material.SetColor(
+            "_Color", OnGround ? Color.black : Color.white
+        );
+    }
 
 }
