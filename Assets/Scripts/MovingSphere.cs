@@ -8,20 +8,29 @@ public class MovingSphere : MonoBehaviour
     [SerializeField] Rect allowedArea = new Rect(-5f, -5f, 10f, 10f);
     [SerializeField, Range(0f, 1f)] float bounciness = 0.5f;
 
-
-    [SerializeField, Range(0f, 100f)] float maxAcceleration = 10f, maxAirAcceleration = 1f;
+    // Ground Control
+    [SerializeField, Range(0f, 100f)] float maxAcceleration = 10f;
     [SerializeField, Range(0f, 100f)] float maxSpeed = 10f;
+    [SerializeField, Range(0f, 90f)] float maxGroundAngle = 25f;
+
+    // Air Control
+    [SerializeField, Range(0f, 100f)] float maxAirAcceleration = 1f;
     [SerializeField, Range(0f, 10f)] float jumpHeight = 2f;
     [SerializeField, Range(0, 5)] int maxAirJumps = 0;
-    [SerializeField, Range(0f, 90f)] float maxGroundAngle = 25f;
+    
+    // Snapping
     [SerializeField, Range(0f, 100f)] float maxSnapSpeed = 100f;
     [SerializeField, Min(0f)] float probeDistance = 1f; // Searching distance below sphere (for snapping)
+    [SerializeField] LayerMask probeMask = -1; // -1 matches all layers, manually exclude raycasting and agent layers
+
 
     Rigidbody body;
 
     // To see which jump are we at
     int jumpPhase;
-    int groundContactCount, stepsSinceLastGrounded;
+
+    // how many ground planes we contacting, physics steps while on air, physics steps since last jump
+    int groundContactCount, stepsSinceLastGrounded, stepsSinceLastJump;
 
     float minGroundDotProduct;
 
@@ -123,10 +132,37 @@ public class MovingSphere : MonoBehaviour
             }
         }
     }
+    void UpdateState()
+    {
+        stepsSinceLastGrounded += 1;
+        stepsSinceLastJump += 1;
+        velocity = body.velocity;
+
+        if (OnGround || SnapToGround()) // if on ground or trying to stay
+        {
+            stepsSinceLastGrounded = 0;
+            jumpPhase = 0;
+
+            if (groundContactCount > 1) // if there are multiple ground contacts
+            {
+                contactNormal.Normalize(); // normalize the accumulated vector
+            }
+        }
+        else // if on air, use global Y
+        {
+            contactNormal = Vector3.up;
+        }
+    }
+    void ClearState()
+    {
+        groundContactCount = 0;
+        contactNormal = Vector3.zero;
+    }
     void Jump() 
     {
         if (OnGround || jumpPhase < maxAirJumps)
         {
+            stepsSinceLastJump = 0; // jumping, so reset
             jumpPhase += 1;
             
             float jumpSpeed = Mathf.Sqrt(-2f * Physics.gravity.y * jumpHeight);
@@ -173,37 +209,14 @@ public class MovingSphere : MonoBehaviour
         // Adjust the velocity by adding the differences between the new and old speeds along the relative axes.
         velocity += xAxis * (newX - currentX) + zAxis * (newZ - currentZ);
     }
-    void UpdateState()
-    {
-        stepsSinceLastGrounded += 1;
-        velocity = body.velocity;
 
-        if (OnGround || SnapToGround()) // if on ground or trying to stay
-        {
-            stepsSinceLastGrounded = 0;
-            jumpPhase = 0;
-
-            if(groundContactCount > 1) // if there are multiple ground contacts
-            {
-                contactNormal.Normalize(); // normalize the accumulated vector
-            }
-        }
-        else // if on air, use global Y
-        {
-            contactNormal = Vector3.up;
-        }
-    }
-    void ClearState()
-    {
-        groundContactCount = 0;
-        contactNormal = Vector3.zero;
-    }
 
     bool SnapToGround() 
     {
-        // if on air more than 1 physics step set false
-        // trying to snap once right after losing contact to ground (when [0,1] we will try snapping so return true) 
-        if(stepsSinceLastGrounded > 1)
+        // trying to snap right after losing contact to ground
+        // if on air more than 1 physics step don't snap
+        // or don't snap if a jump is initiated just now
+        if (stepsSinceLastGrounded > 1 || stepsSinceLastJump <= 2)
         {
             return false;
         }
@@ -214,8 +227,8 @@ public class MovingSphere : MonoBehaviour
             return false;
         }
 
-        // Use Raycasting to see if there is ground below, get info as to what we hit
-        if(!Physics.Raycast(body.position, Vector3.down, out RaycastHit hitInfo, probeDistance))
+        // Use Raycasting to see if there is ground below, get info as to what we hit, exclude other spheres from raycasts
+        if(!Physics.Raycast(body.position, Vector3.down, out RaycastHit hitInfo, probeDistance, probeMask))
         {
             return false;
         }
