@@ -164,7 +164,7 @@ public class MovingSphere : MonoBehaviour
         stepsSinceLastJump += 1;
         velocity = body.velocity;
 
-        if (OnGround || SnapToGround()) // if on ground or trying to stay
+        if (OnGround || SnapToGround() || CheckSteepContacts()) // if on ground or trying to stay
         {
             stepsSinceLastGrounded = 0;
             jumpPhase = 0;
@@ -184,6 +184,24 @@ public class MovingSphere : MonoBehaviour
         groundContactCount = steepContactCount = 0;
         contactNormal = steepNormal = Vector3.zero;
     }
+
+    // return true if steep contacts are converted into a virtual ground normal 
+    bool CheckSteepContacts()
+    {
+        if (steepContactCount > 1) // if multiple steep surfaces present
+        {
+            steepNormal.Normalize();
+
+            if (steepNormal.y >= minGroundDotProduct) // check if the result can be classified as ground
+            {
+                groundContactCount = 1;
+                contactNormal = steepNormal;
+                return true; // conversion accomplished
+            }
+        }
+        return false; // failed
+    }
+
     void Jump() 
     {
         if (OnGround || jumpPhase < maxAirJumps)
