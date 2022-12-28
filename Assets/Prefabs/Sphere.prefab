@@ -119,9 +119,10 @@ MonoBehaviour:
     width: 9
     height: 9
   bounciness: 0.5
-  maxAcceleration: 10
-  maxSpeed: 10
-  maxGroundAngle: 35
+  maxAcceleration: 27.5
+  maxSpeed: 15
+  maxGroundAngle: 30
+  maxStairsAngle: 50
   maxAirAcceleration: 1
   jumpHeight: 2
   maxAirJumps: 1
@@ -129,7 +130,10 @@ MonoBehaviour:
   probeDistance: 1
   probeMask:
     serializedVersion: 2
-    m_Bits: 51
+    m_Bits: 307
+  stairsMask:
+    serializedVersion: 2
+    m_Bits: 256
 --- !u!96 &8037914559211182122
 TrailRenderer:
   serializedVersion: 2

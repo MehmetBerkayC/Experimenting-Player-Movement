@@ -11,7 +11,7 @@ public class MovingSphere : MonoBehaviour
     // Ground Control
     [SerializeField, Range(0f, 100f)] float maxAcceleration = 10f;
     [SerializeField, Range(0f, 100f)] float maxSpeed = 10f;
-    [SerializeField, Range(0f, 90f)] float maxGroundAngle = 25f;
+    [SerializeField, Range(0f, 90f)] float maxGroundAngle = 25f, maxStairsAngle = 50f;
 
     // Air Control
     [SerializeField, Range(0f, 100f)] float maxAirAcceleration = 1f;
@@ -21,7 +21,7 @@ public class MovingSphere : MonoBehaviour
     // Snapping
     [SerializeField, Range(0f, 100f)] float maxSnapSpeed = 100f;
     [SerializeField, Min(0f)] float probeDistance = 1f; // Searching distance below sphere (for snapping)
-    [SerializeField] LayerMask probeMask = -1; // -1 matches all layers, manually exclude raycasting and agent layers
+    [SerializeField] LayerMask probeMask = -1, stairsMask = -1; // -1 matches all layers, manually exclude raycasting and agent layers
 
 
     Rigidbody body;
@@ -29,24 +29,42 @@ public class MovingSphere : MonoBehaviour
     // To see which jump are we at
     int jumpPhase;
 
-    // how many ground planes we contacting, physics steps while on air, physics steps since last jump
-    int groundContactCount, stepsSinceLastGrounded, stepsSinceLastJump;
+    
+    int groundContactCount, // How many ground planes we contacting,  
+        stepsSinceLastGrounded, stepsSinceLastJump, // Physics steps while on air, physics steps since last jump
+        steepContactCount; // A steep contact is one that is too steep to count as ground, but isn't a ceiling or overhang
 
-    float minGroundDotProduct;
+    float minGroundDotProduct, minStairsDotProduct;
 
     Vector3 velocity, desiredVelocity;
-    Vector3 contactNormal; // Slope's normal
+    Vector3 contactNormal,  // Slope's normal
+            steepNormal; // 
+
 
     bool desiredJump;
     
-    // short way to define a single-statement readonly property
+    // Short way to define a single-statement readonly property
     bool OnGround => groundContactCount > 0; // returns true if at least 1 contact available
+    bool OnSteep => steepContactCount > 0; 
+
+    // returns appropriate minimum for a given layer 
+    float GetMinDot(int layer)
+    {
+        // See Link for layering info
+        // https://catlikecoding.com/unity/tutorials/movement/surface-contact/#:~:text=colliding%20with%20stairs.-,Max%20Stairs%20Angle,-If%20we%27re%20able
+        // Assuming we can directly compare the stairs mask and layer, return correct dot product for given layer
+        // (layer is integer but layermask is bitmask -can be considered integer-, see https://docs.unity3d.com/Manual/layers-and-layermasks.html)
+        // There can be multiple layers for given mask so we need to support a mask for any combination of layers
+        return (stairsMask & (1 << layer)) == 0 ? minGroundDotProduct : minStairsDotProduct;
+        
+    }
 
     // With OnValidate, treshold remains synchronized with the angle when we change it via the inspector while in play mode.
     private void OnValidate()
     {
-        // The configured angle defines the minimum result that still counts as ground.
+        // The configured angle defines the minimum result that still counts as ground / stairs.
         minGroundDotProduct = Mathf.Cos(maxGroundAngle * Mathf.Deg2Rad); // Method takes radians
+        minStairsDotProduct = Mathf.Cos(maxStairsAngle * Mathf.Deg2Rad);
     }
 
     private void Awake()
@@ -116,6 +134,9 @@ public class MovingSphere : MonoBehaviour
 
     void EvaluateCollision (Collision collision)
     {
+        // Compare collisioned gameobjects layer
+        float mindot = GetMinDot(collision.gameObject.layer); // Ground or Stairs Dot Product
+
         for (int i = 0; i < collision.contactCount; i++)
         {
             Vector3 normal = collision.GetContact(i).normal;
@@ -125,10 +146,15 @@ public class MovingSphere : MonoBehaviour
             // onGround |= normal.y >= minGroundDotProduct; // min Angle we accept as ground
 
             /// This way jump will be angled on the slope's Y Axis (slope's normal)
-            if (normal.y >= minGroundDotProduct)
+            if (normal.y >= mindot)
             {
                 groundContactCount += 1; 
                 contactNormal += normal;
+            }
+            else if (normal.y > -0.01f) // if we don't have a ground contact check whether it's a steep contact
+            {
+                steepContactCount += 1;
+                steepNormal += normal;
             }
         }
     }
@@ -155,8 +181,8 @@ public class MovingSphere : MonoBehaviour
     }
     void ClearState()
     {
-        groundContactCount = 0;
-        contactNormal = Vector3.zero;
+        groundContactCount = steepContactCount = 0;
+        contactNormal = steepNormal = Vector3.zero;
     }
     void Jump() 
     {
@@ -234,7 +260,7 @@ public class MovingSphere : MonoBehaviour
         }
 
         // compare raycast info's normal(true surface normal) with minimum angle we count as ground
-        if (hitInfo.normal.y < minGroundDotProduct) 
+        if (hitInfo.normal.y < GetMinDot(hitInfo.collider.gameObject.layer)) // checking ground can be stairs
         {
             return false;
         }
