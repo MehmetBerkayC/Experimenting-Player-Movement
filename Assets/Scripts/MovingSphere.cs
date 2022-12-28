@@ -95,9 +95,9 @@ public class MovingSphere : MonoBehaviour
         // That way it remains true once enabled until we explicitly set it back to false.
         desiredJump |= Input.GetButtonDown("Jump");
 
-        /// Coloring
+        /// Color for Debugging
         // ColorOnGroundContacts();
-        ColorOnAir();
+        // ColorOnAir();
     }
 
     // For the physics updates FixedUpdate is prefered
@@ -167,7 +167,11 @@ public class MovingSphere : MonoBehaviour
         if (OnGround || SnapToGround() || CheckSteepContacts()) // if on ground or trying to stay
         {
             stepsSinceLastGrounded = 0;
-            jumpPhase = 0;
+
+            if(stepsSinceLastGrounded > 1) // while on air, be able to jump again
+            {
+                jumpPhase = 0; 
+            }
 
             if (groundContactCount > 1) // if there are multiple ground contacts
             {
@@ -204,26 +208,53 @@ public class MovingSphere : MonoBehaviour
 
     void Jump() 
     {
-        if (OnGround || jumpPhase < maxAirJumps)
+        Vector3 jumpDirection;
+
+        if (OnGround)
         {
-            stepsSinceLastJump = 0; // jumping, so reset
-            jumpPhase += 1;
-            
-            float jumpSpeed = Mathf.Sqrt(-2f * Physics.gravity.y * jumpHeight);
-            float alignedSpeed = Vector3.Dot(velocity, contactNormal);
-            
-            // We don't want limitless jumpspeed which means,
-            // repeated jumping shouldn't add more speed to the movement
-            if(alignedSpeed > 0f) // if already jumping(on air) 
+            jumpDirection = contactNormal;
+        }
+        else if (OnSteep)
+        {
+            jumpDirection = steepNormal;
+            jumpPhase = 0; // reset air jumps
+        }
+        else if (maxAirJumps > 0 && jumpPhase <= maxAirJumps) // if able to jump 
+        {
+            if(jumpPhase == 0) // prevent extra air jump while falling off a surface without jumping
             {
-                // subtract this velocity from the mew jump action(stable jump velocity)
-                // also if we're already going faster than the jump speed then we don't want a jump to slow us down,
-                // either subtract from the jumpspeed or don't change anything ensuring that the modified jump speed never goes negative
-                jumpSpeed = Mathf.Max(jumpSpeed - alignedSpeed, 0f);
+                jumpPhase = 1;
             }
 
-            velocity += contactNormal * jumpSpeed;
+            jumpDirection = contactNormal;
         }
+        else
+        {
+            return;
+        }
+
+        stepsSinceLastJump = 0; // jumping, so reset
+        jumpPhase += 1;
+            
+        float jumpSpeed = Mathf.Sqrt(-2f * Physics.gravity.y * jumpHeight);
+
+        // this way we get upward momentum while wall jumping, ground won't be affected
+        jumpDirection = (jumpDirection + Vector3.up).normalized;
+
+        float alignedSpeed = Vector3.Dot(velocity, jumpDirection);
+            
+         // We don't want limitless jumpspeed which means,
+        // repeated jumping shouldn't add more speed to the movement
+        if(alignedSpeed > 0f) // if already jumping(on air) 
+        {
+            // subtract this velocity from the mew jump action(stable jump velocity)
+            // also if we're already going faster than the jump speed then we don't want a jump to slow us down,
+            // either subtract from the jumpspeed or don't change anything ensuring that the modified jump speed never goes negative
+            jumpSpeed = Mathf.Max(jumpSpeed - alignedSpeed, 0f);
+        }
+
+        velocity += jumpDirection * jumpSpeed;
+        
     }
 
     Vector3 ProjectOnContactPlane (Vector3 vector)
