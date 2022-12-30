@@ -230,7 +230,7 @@ GameObject:
   - component: {fileID: 737187359}
   - component: {fileID: 737187358}
   m_Layer: 0
-  m_Name: Main Camera
+  m_Name: Orbit Camera
   m_TagString: MainCamera
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -316,6 +316,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   focus: {fileID: 1945897105}
   distance: 5
+  focusCentering: 0.5
+  rotationSpeed: 90
+  focusRadius: 1
+  alignDelay: 5
+  alignSmoothRange: 45
+  minVerticalAngle: -30
+  maxVerticalAngle: 60
 --- !u!1 &1078375637
 GameObject:
   m_ObjectHideFlags: 0
@@ -845,6 +852,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 8037914559211182133, guid: fd525fc73850ec54795a683f43fd7750, type: 3}
+      propertyPath: playerInputSpace
+      value: 
+      objectReference: {fileID: 737187360}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: fd525fc73850ec54795a683f43fd7750, type: 3}
 --- !u!4 &1945897105 stripped

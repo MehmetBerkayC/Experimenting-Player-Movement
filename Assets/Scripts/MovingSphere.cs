@@ -23,6 +23,8 @@ public class MovingSphere : MonoBehaviour
     [SerializeField, Min(0f)] float probeDistance = 1f; // Searching distance below sphere (for snapping)
     [SerializeField] LayerMask probeMask = -1, stairsMask = -1; // -1 matches all layers, manually exclude raycasting and agent layers
 
+    [SerializeField]
+    Transform playerInputSpace = default;
 
     Rigidbody body;
 
@@ -88,7 +90,29 @@ public class MovingSphere : MonoBehaviour
         // With Rigidbody
         playerInput = Vector2.ClampMagnitude(playerInput, 1f);
 
-        desiredVelocity = new Vector3(playerInput.x, 0f, playerInput.y) * maxSpeed;
+        // Player Movement Relative to the Camera POV
+        if (playerInputSpace)
+        {
+            // if we just take the camera's transform direction,
+            // camera's Y movement affects sphere's movement
+            //desiredVelocity = playerInputSpace.TransformDirection(playerInput.x, 0f, playerInput.y) * maxSpeed;
+            
+            // Movement independent of Camera's Y Axis 
+            Vector3 forward = playerInputSpace.forward;
+            forward.y = 0f;
+            forward.Normalize();
+
+            Vector3 right = playerInputSpace.right;
+            right.y = 0f;
+            right.Normalize();
+            
+            desiredVelocity = (forward * playerInput.y + right * playerInput.x) * maxSpeed;
+        }
+        else // Keep Player input in world space
+        {
+            desiredVelocity =
+                new Vector3(playerInput.x, 0f, playerInput.y) * maxSpeed;
+        }
 
         // We might end up not invoking FixedUpdate next frame, in which case desiredJump is set back to false and the desire to jump will be forgotten.
         // We can prevent that by combining the check with its previous value via the boolean OR operation, or the OR assignment.
