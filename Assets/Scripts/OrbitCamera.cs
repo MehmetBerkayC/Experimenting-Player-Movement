@@ -6,6 +6,8 @@ using UnityEngine;
 [RequireComponent(typeof(Camera))]
 public class OrbitCamera : MonoBehaviour
 {
+    Camera regularCamera;
+
     [SerializeField] Transform focus = default;
 
     [SerializeField, Range(1f, 20f)] float distance = 5f;
@@ -23,7 +25,8 @@ public class OrbitCamera : MonoBehaviour
 
     Vector3 focusPoint, previousFocusPoint;
     Vector2 orbitAngles = new Vector2(45f, 0f);
-    
+
+    [SerializeField] LayerMask obstructionMask = -1;
 
     void OnValidate()
     {
@@ -36,6 +39,7 @@ public class OrbitCamera : MonoBehaviour
     // Start is called before the first frame update
     void Awake()
     {
+        regularCamera = GetComponent<Camera>();
         focusPoint = focus.position;
         transform.localRotation = Quaternion.Euler(orbitAngles);
     }
@@ -60,15 +64,39 @@ public class OrbitCamera : MonoBehaviour
 
         Vector3 lookDirection = lookRotation * Vector3.forward;
         Vector3 lookPosition = focusPoint - lookDirection * distance;
-        
+
+        Vector3 rectOffset = lookDirection * regularCamera.nearClipPlane;
+        Vector3 rectPosition = lookPosition + rectOffset;
+        Vector3 castFrom = focus.position;
+        Vector3 castLine = rectPosition - castFrom;
+        float castDistance = castLine.magnitude;
+        Vector3 castDirection = castLine / castDistance;
+
         // Raycast towards camera from sphere, if anything is between, pull camera there
-        if(Physics.Raycast(focusPoint, -lookDirection, out RaycastHit hit, distance))
+        if(Physics.BoxCast(castFrom, CameraHalfExtends, castDirection, out RaycastHit hit, lookRotation, castDistance, obstructionMask))
         {
-            lookPosition = focusPoint - lookDirection * hit.distance;
+            // back the camera up as far back as available
+            rectPosition = castFrom + castDirection * hit.distance;
+            lookPosition = rectPosition - rectOffset;
+            
         }
 
         transform.SetPositionAndRotation(lookPosition, lookRotation);
     }
+
+    // Half of the width, height and depth of camera's view properties
+    Vector3 CameraHalfExtends 
+    {
+        get
+        {
+            Vector3 halfExtends;
+            halfExtends.y = regularCamera.nearClipPlane * Mathf.Tan(0.5f * Mathf.Deg2Rad * regularCamera.fieldOfView);
+            halfExtends.x = halfExtends.y * regularCamera.aspect;
+            halfExtends.z = 0f;
+            return halfExtends;
+        }
+    }
+
     bool ManualRotation()
     {
         Vector2 input = new Vector2(
