@@ -40,8 +40,10 @@ public class MovingSphere : MonoBehaviour
 
     Vector3 velocity, desiredVelocity;
     Vector3 contactNormal,  // Slope's normal
-            steepNormal; // 
-
+            steepNormal; // Steep contact's normal -Walls-
+    
+    // Object's Y axis relative to its position, not gravity - Same for X and Z
+    Vector3 upAxis, rightAxis, forwardAxis;
 
     bool desiredJump;
     
@@ -93,26 +95,29 @@ public class MovingSphere : MonoBehaviour
         // Player Movement Relative to the Camera POV
         if (playerInputSpace)
         {
-            // if we just take the camera's transform direction,
-            // camera's Y movement affects sphere's movement
+            /// if we just take the camera's transform direction, camera's Y movement affects sphere's movement
             //desiredVelocity = playerInputSpace.TransformDirection(playerInput.x, 0f, playerInput.y) * maxSpeed;
 
-            // Movement independent of Camera's Y Axis 
-            Vector3 forward = playerInputSpace.forward;
-            forward.y = 0f;
-            forward.Normalize();
+            /// Movement independent of Camera's Y Axis 
+            //Vector3 forward = playerInputSpace.forward;
+            //forward.y = 0f;
+            //forward.Normalize();
 
-            Vector3 right = playerInputSpace.right;
-            right.y = 0f;
-            right.Normalize();
+            //Vector3 right = playerInputSpace.right;
+            //right.y = 0f;
+            //right.Normalize();
 
-            desiredVelocity = (forward * playerInput.y + right * playerInput.x) * maxSpeed;
+            rightAxis = ProjectDirectionOnPlane(playerInputSpace.right, upAxis);
+            forwardAxis = ProjectDirectionOnPlane(playerInputSpace.forward, upAxis);
+
         }
         else // Keep Player input in world space
         {
-            desiredVelocity =
-                new Vector3(playerInput.x, 0f, playerInput.y) * maxSpeed;
+            rightAxis = ProjectDirectionOnPlane(Vector3.right, upAxis);
+            forwardAxis = ProjectDirectionOnPlane(Vector3.forward, upAxis);
         }
+
+        desiredVelocity = new Vector3(playerInput.x, 0f, playerInput.y) * maxSpeed;
 
         // We might end up not invoking FixedUpdate next frame, in which case desiredJump is set back to false and the desire to jump will be forgotten.
         // We can prevent that by combining the check with its previous value via the boolean OR operation, or the OR assignment.
@@ -128,6 +133,9 @@ public class MovingSphere : MonoBehaviour
     // this way the sphere doesn't get jittery when colliding something
     private void FixedUpdate()
     {
+        // Opposite direction of the gravity vector is our upwards axis
+        upAxis = -Physics.gravity.normalized;
+
         // On ground or not
         UpdateState();
 
@@ -159,7 +167,7 @@ public class MovingSphere : MonoBehaviour
     void EvaluateCollision (Collision collision)
     {
         // Compare collisioned gameobjects layer
-        float mindot = GetMinDot(collision.gameObject.layer); // Ground or Stairs Dot Product
+        float minDot = GetMinDot(collision.gameObject.layer); // Ground or Stairs Dot Product
 
         for (int i = 0; i < collision.contactCount; i++)
         {
@@ -170,12 +178,13 @@ public class MovingSphere : MonoBehaviour
             // onGround |= normal.y >= minGroundDotProduct; // min Angle we accept as ground
 
             /// This way jump will be angled on the slope's Y Axis (slope's normal)
-            if (normal.y >= mindot)
+            float upDot = Vector3.Dot(upAxis, normal);
+            if (upDot >= minDot)
             {
                 groundContactCount += 1; 
                 contactNormal += normal;
             }
-            else if (normal.y > -0.01f) // if we don't have a ground contact check whether it's a steep contact
+            else if (upDot > -0.01f) // if we don't have a ground contact check whether it's a steep contact
             {
                 steepContactCount += 1;
                 steepNormal += normal;
@@ -204,7 +213,7 @@ public class MovingSphere : MonoBehaviour
         }
         else // if on air, use global Y
         {
-            contactNormal = Vector3.up;
+            contactNormal = upAxis;
         }
     }
     void ClearState()
@@ -219,8 +228,9 @@ public class MovingSphere : MonoBehaviour
         if (steepContactCount > 1) // if multiple steep surfaces present
         {
             steepNormal.Normalize();
-
-            if (steepNormal.y >= minGroundDotProduct) // check if the result can be classified as ground
+            
+            float upDot = Vector3.Dot(upAxis, steepNormal);
+            if (upDot >= minGroundDotProduct) // check if the result can be classified as ground
             {
                 groundContactCount = 1;
                 contactNormal = steepNormal;
@@ -260,10 +270,10 @@ public class MovingSphere : MonoBehaviour
         stepsSinceLastJump = 0; // jumping, so reset
         jumpPhase += 1;
             
-        float jumpSpeed = Mathf.Sqrt(-2f * Physics.gravity.y * jumpHeight);
+        float jumpSpeed = Mathf.Sqrt(2f * Physics.gravity.magnitude * jumpHeight);
 
         // this way we get upward momentum while wall jumping, ground won't be affected
-        jumpDirection = (jumpDirection + Vector3.up).normalized;
+        jumpDirection = (jumpDirection + upAxis).normalized;
 
         float alignedSpeed = Vector3.Dot(velocity, jumpDirection);
             
@@ -281,16 +291,17 @@ public class MovingSphere : MonoBehaviour
         
     }
 
-    Vector3 ProjectOnContactPlane (Vector3 vector)
+    // Need to project directions on a plane to make Axes relative to ground we are on
+    Vector3 ProjectDirectionOnPlane (Vector3 direction, Vector3 normal)
     {
-        return vector - contactNormal * Vector3.Dot(vector, contactNormal);
+        return (direction - normal * Vector3.Dot(direction, normal)).normalized;
     }
 
     void AdjustVelocity()
     {
-        // Vectors aligned with the ground, but they are only of unit length when the ground is perfectly flat. So normalize to get proper directions.
-        Vector3 xAxis = ProjectOnContactPlane(Vector3.right).normalized;
-        Vector3 zAxis = ProjectOnContactPlane(Vector3.forward).normalized;
+        // Vectors aligned with the ground, but they are only of unit length when the ground is perfectly flat. So normalized to get proper directions.
+        Vector3 xAxis = ProjectDirectionOnPlane(rightAxis, contactNormal);
+        Vector3 zAxis = ProjectDirectionOnPlane(forwardAxis, contactNormal);
 
         // Project the current velocity on both vectors to get the relative X and Z speeds.
         float currentX = Vector3.Dot(velocity, xAxis);
@@ -327,13 +338,15 @@ public class MovingSphere : MonoBehaviour
         }
 
         // Use Raycasting to see if there is ground below, get info as to what we hit, exclude other spheres from raycasts
-        if(!Physics.Raycast(body.position, Vector3.down, out RaycastHit hitInfo, probeDistance, probeMask))
+        if(!Physics.Raycast(body.position, -upAxis, out RaycastHit hitInfo, probeDistance, probeMask))
         {
             return false;
         }
 
+        float upDot = Vector3.Dot(upAxis, hitInfo.normal);
+
         // compare raycast info's normal(true surface normal) with minimum angle we count as ground
-        if (hitInfo.normal.y < GetMinDot(hitInfo.collider.gameObject.layer)) // checking ground can be stairs
+        if (upDot < GetMinDot(hitInfo.collider.gameObject.layer)) // checking ground can be stairs
         {
             return false;
         }
