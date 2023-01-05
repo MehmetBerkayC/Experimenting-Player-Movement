@@ -74,6 +74,7 @@ public class MovingSphere : MonoBehaviour
     private void Awake()
     {
         body = GetComponent<Rigidbody>();
+        body.useGravity = false; // dont use standard gravity
         OnValidate();
     }
 
@@ -134,7 +135,7 @@ public class MovingSphere : MonoBehaviour
     private void FixedUpdate()
     {
         // Opposite direction of the gravity vector is our upwards axis
-        upAxis = -Physics.gravity.normalized;
+        Vector3 gravity = CustomGravity.GetGravity(body.position, out upAxis);
 
         // On ground or not
         UpdateState();
@@ -147,11 +148,12 @@ public class MovingSphere : MonoBehaviour
         if (desiredJump)
         {
             desiredJump = false;
-            Jump();
+            Jump(gravity);
         }
 
-        body.velocity = velocity;
+        velocity += gravity * Time.deltaTime;
 
+        body.velocity = velocity;
         ClearState();
     }
 
@@ -240,7 +242,7 @@ public class MovingSphere : MonoBehaviour
         return false; // failed
     }
 
-    void Jump() 
+    void Jump(Vector3 gravity) 
     {
         Vector3 jumpDirection;
 
@@ -270,7 +272,7 @@ public class MovingSphere : MonoBehaviour
         stepsSinceLastJump = 0; // jumping, so reset
         jumpPhase += 1;
             
-        float jumpSpeed = Mathf.Sqrt(2f * Physics.gravity.magnitude * jumpHeight);
+        float jumpSpeed = Mathf.Sqrt(2f * gravity.magnitude * jumpHeight);
 
         // this way we get upward momentum while wall jumping, ground won't be affected
         jumpDirection = (jumpDirection + upAxis).normalized;
