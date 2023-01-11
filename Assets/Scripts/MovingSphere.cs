@@ -28,39 +28,33 @@ public class MovingSphere : MonoBehaviour
 
     Rigidbody body;
 
-    // To see which jump are we at
-    int jumpPhase;
-
-    
-    int groundContactCount, // How many ground planes we contacting,  
-        stepsSinceLastGrounded, stepsSinceLastJump, // Physics steps while on air, physics steps since last jump
-        steepContactCount; // A steep contact is one that is too steep to count as ground, but isn't a ceiling or overhang
-
-    float minGroundDotProduct, minStairsDotProduct;
-
     Vector3 velocity, desiredVelocity;
     Vector3 contactNormal,  // Slope's normal
             steepNormal; // Steep contact's normal -Walls-
-    
-    // Object's Y axis relative to its position, not gravity - Same for X and Z
-    Vector3 upAxis, rightAxis, forwardAxis;
 
-    bool desiredJump;
+    // Object's Y axis relative to its position, not gravity - Same for X and Z
+    Vector3 upAxis, rightAxis, forwardAxis; 
+
+    // To see which jump are we at
+    int jumpPhase;
+    
+    int groundContactCount,                         // How many ground planes we contacting,  
+        stepsSinceLastGrounded, stepsSinceLastJump, // Physics steps while on air, physics steps since last jump
+        steepContactCount;                          // A steep contact is one that is too steep to count as ground, but isn't a ceiling or overhang
+
+    float minGroundDotProduct, minStairsDotProduct;
+
+    bool desiredJump; // Willing to jump or not
     
     // Short way to define a single-statement readonly property
     bool OnGround => groundContactCount > 0; // returns true if at least 1 contact available
     bool OnSteep => steepContactCount > 0; 
 
-    // returns appropriate minimum for a given layer 
-    float GetMinDot(int layer)
+    private void Awake()
     {
-        // See Link for layering info
-        // https://catlikecoding.com/unity/tutorials/movement/surface-contact/#:~:text=colliding%20with%20stairs.-,Max%20Stairs%20Angle,-If%20we%27re%20able
-        // Assuming we can directly compare the stairs mask and layer, return correct dot product for given layer
-        // (layer is integer but layermask is bitmask -can be considered integer-, see https://docs.unity3d.com/Manual/layers-and-layermasks.html)
-        // There can be multiple layers for given mask so we need to support a mask for any combination of layers
-        return (stairsMask & (1 << layer)) == 0 ? minGroundDotProduct : minStairsDotProduct;
-        
+        body = GetComponent<Rigidbody>();
+        body.useGravity = false; // dont use standard gravity
+        OnValidate();
     }
 
     // With OnValidate, treshold remains synchronized with the angle when we change it via the inspector while in play mode.
@@ -69,13 +63,6 @@ public class MovingSphere : MonoBehaviour
         // The configured angle defines the minimum result that still counts as ground / stairs.
         minGroundDotProduct = Mathf.Cos(maxGroundAngle * Mathf.Deg2Rad); // Method takes radians
         minStairsDotProduct = Mathf.Cos(maxStairsAngle * Mathf.Deg2Rad);
-    }
-
-    private void Awake()
-    {
-        body = GetComponent<Rigidbody>();
-        body.useGravity = false; // dont use standard gravity
-        OnValidate();
     }
 
     // Update is called once per frame
@@ -157,6 +144,44 @@ public class MovingSphere : MonoBehaviour
         ClearState();
     }
 
+    // Need to project directions on a plane to make Axes relative to ground we are on
+    Vector3 ProjectDirectionOnPlane(Vector3 direction, Vector3 normal)
+    {
+        return (direction - normal * Vector3.Dot(direction, normal)).normalized;
+    }
+
+    void ClearState()
+    {
+        groundContactCount = steepContactCount = 0;
+        contactNormal = steepNormal = Vector3.zero;
+    }
+
+    void UpdateState()
+    {
+        stepsSinceLastGrounded += 1;
+        stepsSinceLastJump += 1;
+        velocity = body.velocity;
+
+        if (OnGround || SnapToGround() || CheckSteepContacts()) // if on ground or trying to stay
+        {
+            stepsSinceLastGrounded = 0;
+
+            if (stepsSinceLastJump > 1) // while on air, be able to jump again
+            {
+                jumpPhase = 0;
+            }
+
+            if (groundContactCount > 1) // if there are multiple ground contacts
+            {
+                contactNormal.Normalize(); // normalize the accumulated vector
+            }
+        }
+        else // if on air, use global Y
+        {
+            contactNormal = upAxis;
+        }
+    }
+
     private void OnCollisionEnter(Collision collision)
     {
         EvaluateCollision(collision);
@@ -193,36 +218,6 @@ public class MovingSphere : MonoBehaviour
             }
         }
     }
-    void UpdateState()
-    {
-        stepsSinceLastGrounded += 1;
-        stepsSinceLastJump += 1;
-        velocity = body.velocity;
-
-        if (OnGround || SnapToGround() || CheckSteepContacts()) // if on ground or trying to stay
-        {
-            stepsSinceLastGrounded = 0;
-
-            if(stepsSinceLastGrounded > 1) // while on air, be able to jump again
-            {
-                jumpPhase = 0; 
-            }
-
-            if (groundContactCount > 1) // if there are multiple ground contacts
-            {
-                contactNormal.Normalize(); // normalize the accumulated vector
-            }
-        }
-        else // if on air, use global Y
-        {
-            contactNormal = upAxis;
-        }
-    }
-    void ClearState()
-    {
-        groundContactCount = steepContactCount = 0;
-        contactNormal = steepNormal = Vector3.zero;
-    }
 
     // return true if steep contacts are converted into a virtual ground normal 
     bool CheckSteepContacts()
@@ -234,12 +229,25 @@ public class MovingSphere : MonoBehaviour
             float upDot = Vector3.Dot(upAxis, steepNormal);
             if (upDot >= minGroundDotProduct) // check if the result can be classified as ground
             {
+                steepContactCount = 0;
                 groundContactCount = 1;
                 contactNormal = steepNormal;
                 return true; // conversion accomplished
             }
         }
         return false; // failed
+    }
+
+    // returns appropriate minimum for a given layer 
+    float GetMinDot(int layer)
+    {
+        // See Link for layering info
+        // https://catlikecoding.com/unity/tutorials/movement/surface-contact/#:~:text=colliding%20with%20stairs.-,Max%20Stairs%20Angle,-If%20we%27re%20able
+        // Assuming we can directly compare the stairs mask and layer, return correct dot product for given layer
+        // (layer is integer but layermask is bitmask -can be considered integer-, see https://docs.unity3d.com/Manual/layers-and-layermasks.html)
+        // There can be multiple layers for given mask so we need to support a mask for any combination of layers
+        return (stairsMask & (1 << layer)) == 0 ? minGroundDotProduct : minStairsDotProduct;
+
     }
 
     void Jump(Vector3 gravity) 
@@ -286,17 +294,11 @@ public class MovingSphere : MonoBehaviour
             // subtract this velocity from the mew jump action(stable jump velocity)
             // also if we're already going faster than the jump speed then we don't want a jump to slow us down,
             // either subtract from the jumpspeed or don't change anything ensuring that the modified jump speed never goes negative
-            jumpSpeed = Mathf.Max(jumpSpeed - alignedSpeed, 0f);
+            jumpSpeed = Mathf.Max(jumpSpeed - velocity.y, 0f);
         }
 
         velocity += jumpDirection * jumpSpeed;
         
-    }
-
-    // Need to project directions on a plane to make Axes relative to ground we are on
-    Vector3 ProjectDirectionOnPlane (Vector3 direction, Vector3 normal)
-    {
-        return (direction - normal * Vector3.Dot(direction, normal)).normalized;
     }
 
     void AdjustVelocity()

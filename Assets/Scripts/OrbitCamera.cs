@@ -17,6 +17,7 @@ public class OrbitCamera : MonoBehaviour
     [SerializeField, Min(0f)] float focusRadius = 1f;
     [SerializeField, Min(0f)] float alignDelay = 5f;
     [SerializeField, Range(0f, 90f)] float alignSmoothRange = 45f;
+    [SerializeField, Min(0f)] float upAlignmentSpeed = 360f;
 
     [SerializeField, Range(-89f, 89f)]
     float minVerticalAngle = -30f, maxVerticalAngle = 60f;
@@ -50,8 +51,7 @@ public class OrbitCamera : MonoBehaviour
     // Update is called once per frame
     void LateUpdate()
     {
-        gravityAlignment = Quaternion.FromToRotation(gravityAlignment * Vector3.up, CustomGravity.GetUpAxis(focusPoint)) * gravityAlignment;
-
+        UpdateGravityAlignment();
         UpdateFocusPoint();
 
         // Player Input
@@ -99,6 +99,28 @@ public class OrbitCamera : MonoBehaviour
         }
     }
 
+    void UpdateGravityAlignment()
+    {
+        Vector3 fromUp = gravityAlignment * Vector3.up;
+        Vector3 toUp = CustomGravity.GetUpAxis(focusPoint);
+
+        float dot = Mathf.Clamp(Vector3.Dot(fromUp, toUp), -1, 1);
+        float angle = Mathf.Acos(dot) * Mathf.Rad2Deg;
+        float maxAngle = upAlignmentSpeed * Time.deltaTime;
+
+        Quaternion newAlignment = Quaternion.FromToRotation(fromUp, toUp) * gravityAlignment;
+
+        if (angle <= maxAngle)
+        {
+            gravityAlignment = newAlignment;
+        }
+        else
+        {
+            gravityAlignment = Quaternion.SlerpUnclamped(
+                gravityAlignment, newAlignment, maxAngle / angle
+            );
+        }
+    }
     bool ManualRotation()
     {
         Vector2 input = new Vector2(
