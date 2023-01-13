@@ -26,9 +26,12 @@ public class MovingSphere : MonoBehaviour
     [SerializeField]
     Transform playerInputSpace = default;
 
-    Rigidbody body;
+    Rigidbody body, connectedBody, previousConnectedBody;
 
-    Vector3 velocity, desiredVelocity;
+    Vector3 velocity, desiredVelocity, connectionVelocity;
+
+    Vector3 connectionWorldPosition;
+
     Vector3 contactNormal,  // Slope's normal
             steepNormal; // Steep contact's normal -Walls-
 
@@ -153,7 +156,9 @@ public class MovingSphere : MonoBehaviour
     void ClearState()
     {
         groundContactCount = steepContactCount = 0;
-        contactNormal = steepNormal = Vector3.zero;
+        contactNormal = steepNormal = connectionVelocity = Vector3.zero;
+        previousConnectedBody = connectedBody;
+        connectedBody = null;
     }
 
     void UpdateState()
@@ -179,6 +184,14 @@ public class MovingSphere : MonoBehaviour
         else // if on air, use global Y
         {
             contactNormal = upAxis;
+        }
+
+        if (connectedBody)
+        {
+            if(connectedBody.isKinematic || connectedBody.mass >= body.mass)
+            {
+                UpdateConnectionState();
+            }
         }
     }
 
@@ -210,13 +223,32 @@ public class MovingSphere : MonoBehaviour
             {
                 groundContactCount += 1; 
                 contactNormal += normal;
+                connectedBody = collision.rigidbody;
             }
             else if (upDot > -0.01f) // if we don't have a ground contact check whether it's a steep contact
             {
                 steepContactCount += 1;
                 steepNormal += normal;
+
+                // only assign a slope body if there isn't already a ground contact
+                if (groundContactCount == 0)
+                {
+                    connectedBody = collision.rigidbody;
+                }
             }
         }
+    }
+
+
+    void UpdateConnectionState()
+    {
+        if(connectedBody == previousConnectedBody)
+        {
+            Vector3 connectionMovement = connectedBody.position - connectionWorldPosition;
+            connectionVelocity = connectionMovement / Time.deltaTime;
+
+        }
+        connectionWorldPosition = connectedBody.position;
     }
 
     // return true if steep contacts are converted into a virtual ground normal 
@@ -307,9 +339,11 @@ public class MovingSphere : MonoBehaviour
         Vector3 xAxis = ProjectDirectionOnPlane(rightAxis, contactNormal);
         Vector3 zAxis = ProjectDirectionOnPlane(forwardAxis, contactNormal);
 
+        Vector3 relativeVelocity = velocity - connectionVelocity;
+
         // Project the current velocity on both vectors to get the relative X and Z speeds.
-        float currentX = Vector3.Dot(velocity, xAxis);
-        float currentZ = Vector3.Dot(velocity, zAxis);
+        float currentX = Vector3.Dot(relativeVelocity, xAxis);
+        float currentZ = Vector3.Dot(relativeVelocity, zAxis);
 
         // if onground use acceleration else air acceleration
         float acceleration = OnGround ? maxAcceleration : maxAirAcceleration;
@@ -370,6 +404,10 @@ public class MovingSphere : MonoBehaviour
         {
             velocity = (velocity - hitInfo.normal * dot).normalized * speed;
         }
+
+        // When ground detected get its rigidbody
+        connectedBody = hitInfo.rigidbody;
+
         return true;
     }
 
