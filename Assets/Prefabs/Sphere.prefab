@@ -126,6 +126,7 @@ MonoBehaviour:
   maxAirAcceleration: 1
   jumpHeight: 2
   maxAirJumps: 1
+  maxClimbAngle: 140
   maxSnapSpeed: 100
   probeDistance: 1
   probeMask:
@@ -134,6 +135,11 @@ MonoBehaviour:
   stairsMask:
     serializedVersion: 2
     m_Bits: 256
+  climbMask:
+    serializedVersion: 2
+    m_Bits: 371
+  normalMaterial: {fileID: 2100000, guid: 7023fa06fb36d4f4488cc3403cb370b8, type: 2}
+  climbingMaterial: {fileID: 2100000, guid: 68deb1c40bcf4e3459655e65cec26381, type: 2}
   playerInputSpace: {fileID: 0}
 --- !u!96 &8037914559211182122
 TrailRenderer:

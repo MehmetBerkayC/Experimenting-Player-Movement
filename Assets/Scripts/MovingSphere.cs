@@ -17,11 +17,19 @@ public class MovingSphere : MonoBehaviour
     [SerializeField, Range(0f, 100f)] float maxAirAcceleration = 1f;
     [SerializeField, Range(0f, 10f)] float jumpHeight = 2f;
     [SerializeField, Range(0, 5)] int maxAirJumps = 0;
-    
+
+    // Climbing 
+    [SerializeField, Range(90, 180)] float maxClimbAngle = 140f;
+    [SerializeField, Range(0f, 100f)] float maxClimbSpeed = 2f, maxClimbAcceleration = 20f;
+
+
     // Snapping
     [SerializeField, Range(0f, 100f)] float maxSnapSpeed = 100f;
     [SerializeField, Min(0f)] float probeDistance = 1f; // Searching distance below sphere (for snapping)
-    [SerializeField] LayerMask probeMask = -1, stairsMask = -1; // -1 matches all layers, manually exclude raycasting and agent layers
+    [SerializeField] LayerMask probeMask = -1, stairsMask = -1, climbMask = -1; // -1 matches all layers, manually exclude raycasting and agent layers
+
+    [SerializeField] Material normalMaterial = default, climbingMaterial = default;
+    MeshRenderer meshRenderer;
 
     [SerializeField]
     Transform playerInputSpace = default;
@@ -30,33 +38,37 @@ public class MovingSphere : MonoBehaviour
 
     Vector3 velocity, desiredVelocity, connectionVelocity;
 
-    Vector3 connectionWorldPosition;
+    Vector3 connectionWorldPosition, connectionLocalPosition;
 
     Vector3 contactNormal,  // Slope's normal
-            steepNormal; // Steep contact's normal -Walls-
+            steepNormal, // Steep contact's normal -Walls-
+            climbNormal; // Climbable surface normal up to 45 Degrees overhang
 
     // Object's Y axis relative to its position, not gravity - Same for X and Z
     Vector3 upAxis, rightAxis, forwardAxis; 
 
     // To see which jump are we at
     int jumpPhase;
-    
+
     int groundContactCount,                         // How many ground planes we contacting,  
         stepsSinceLastGrounded, stepsSinceLastJump, // Physics steps while on air, physics steps since last jump
-        steepContactCount;                          // A steep contact is one that is too steep to count as ground, but isn't a ceiling or overhang
+        steepContactCount,    /*Wall*/              // A steep contact is one that is too steep to count as ground, but isn't a ceiling or overhang
+        climbContactCount;                          // Climbable surface up to overhangs (45degrees)
 
-    float minGroundDotProduct, minStairsDotProduct;
+    float minGroundDotProduct, minStairsDotProduct, minClimbDotProduct;
 
     bool desiredJump; // Willing to jump or not
     
     // Short way to define a single-statement readonly property
     bool OnGround => groundContactCount > 0; // returns true if at least 1 contact available
-    bool OnSteep => steepContactCount > 0; 
+    bool OnSteep => steepContactCount > 0;
+    bool Climbing => climbContactCount > 0;
 
     private void Awake()
     {
         body = GetComponent<Rigidbody>();
         body.useGravity = false; // dont use standard gravity
+        meshRenderer.material = Climbing ? climbingMaterial : normalMaterial;
         OnValidate();
     }
 
@@ -66,6 +78,7 @@ public class MovingSphere : MonoBehaviour
         // The configured angle defines the minimum result that still counts as ground / stairs.
         minGroundDotProduct = Mathf.Cos(maxGroundAngle * Mathf.Deg2Rad); // Method takes radians
         minStairsDotProduct = Mathf.Cos(maxStairsAngle * Mathf.Deg2Rad);
+        minClimbDotProduct = Mathf.Cos(maxClimbAngle * Mathf.Deg2Rad);
     }
 
     // Update is called once per frame
@@ -141,7 +154,10 @@ public class MovingSphere : MonoBehaviour
             Jump(gravity);
         }
 
-        velocity += gravity * Time.deltaTime;
+        if (!Climbing)
+        {
+            velocity += gravity * Time.deltaTime;
+        }
 
         body.velocity = velocity;
         ClearState();
@@ -153,10 +169,21 @@ public class MovingSphere : MonoBehaviour
         return (direction - normal * Vector3.Dot(direction, normal)).normalized;
     }
 
+    bool CheckClimbing()
+    {
+        if (Climbing)
+        {
+            groundContactCount = climbContactCount;
+            contactNormal = climbNormal;
+            return true;
+        }
+        return false;
+    }
+
     void ClearState()
     {
-        groundContactCount = steepContactCount = 0;
-        contactNormal = steepNormal = connectionVelocity = Vector3.zero;
+        groundContactCount = steepContactCount = climbContactCount = 0;
+        contactNormal = steepNormal = connectionVelocity = climbNormal = Vector3.zero;
         previousConnectedBody = connectedBody;
         connectedBody = null;
     }
@@ -167,7 +194,7 @@ public class MovingSphere : MonoBehaviour
         stepsSinceLastJump += 1;
         velocity = body.velocity;
 
-        if (OnGround || SnapToGround() || CheckSteepContacts()) // if on ground or trying to stay
+        if (CheckClimbing() || OnGround || SnapToGround() || CheckSteepContacts()) // if on ground or trying to stay
         {
             stepsSinceLastGrounded = 0;
 
@@ -195,6 +222,20 @@ public class MovingSphere : MonoBehaviour
         }
     }
 
+    void UpdateConnectionState()
+    {
+
+        if (connectedBody == previousConnectedBody)
+        {
+            Vector3 connectionMovement = connectedBody.transform.TransformPoint(connectionLocalPosition) - connectionWorldPosition;
+            connectionVelocity = connectionMovement / Time.deltaTime;
+
+        }
+        connectionWorldPosition = body.position;
+        connectionLocalPosition = connectedBody.transform.InverseTransformPoint(connectionWorldPosition);
+
+    }
+
     private void OnCollisionEnter(Collision collision)
     {
         EvaluateCollision(collision);
@@ -207,7 +248,8 @@ public class MovingSphere : MonoBehaviour
     void EvaluateCollision (Collision collision)
     {
         // Compare collisioned gameobjects layer
-        float minDot = GetMinDot(collision.gameObject.layer); // Ground or Stairs Dot Product
+        int layer = collision.gameObject.layer;
+        float minDot = GetMinDot(layer); // Ground, Stairs or Climbable Dot Product
 
         for (int i = 0; i < collision.contactCount; i++)
         {
@@ -225,14 +267,23 @@ public class MovingSphere : MonoBehaviour
                 contactNormal += normal;
                 connectedBody = collision.rigidbody;
             }
-            else if (upDot > -0.01f) // if we don't have a ground contact check whether it's a steep contact
+            else
             {
-                steepContactCount += 1;
-                steepNormal += normal;
-
-                // only assign a slope body if there isn't already a ground contact
-                if (groundContactCount == 0)
+                if (upDot > -0.01f) // if we don't have a ground contact check whether it's a steep contact
                 {
+                    steepContactCount += 1;
+                    steepNormal += normal;
+
+                    // only assign a slope body if there isn't already a ground contact
+                    if (groundContactCount == 0)
+                    {
+                        connectedBody = collision.rigidbody;
+                    }
+                }
+                if(upDot >= minClimbDotProduct && (climbMask & (1 << layer)) != 0)
+                {
+                    climbContactCount += 1;
+                    climbNormal = normal;
                     connectedBody = collision.rigidbody;
                 }
             }
@@ -240,16 +291,6 @@ public class MovingSphere : MonoBehaviour
     }
 
 
-    void UpdateConnectionState()
-    {
-        if(connectedBody == previousConnectedBody)
-        {
-            Vector3 connectionMovement = connectedBody.position - connectionWorldPosition;
-            connectionVelocity = connectionMovement / Time.deltaTime;
-
-        }
-        connectionWorldPosition = connectedBody.position;
-    }
 
     // return true if steep contacts are converted into a virtual ground normal 
     bool CheckSteepContacts()
@@ -335,9 +376,21 @@ public class MovingSphere : MonoBehaviour
 
     void AdjustVelocity()
     {
+        Vector3 xAxis, zAxis;
+        if (Climbing)
+        {
+            xAxis = Vector3.Cross(contactNormal, upAxis);
+            zAxis = upAxis;
+        }
+        else
+        {
+            xAxis = rightAxis;
+            zAxis = forwardAxis;
+        }
+
         // Vectors aligned with the ground, but they are only of unit length when the ground is perfectly flat. So normalized to get proper directions.
-        Vector3 xAxis = ProjectDirectionOnPlane(rightAxis, contactNormal);
-        Vector3 zAxis = ProjectDirectionOnPlane(forwardAxis, contactNormal);
+        xAxis = ProjectDirectionOnPlane(rightAxis, contactNormal);
+        zAxis = ProjectDirectionOnPlane(forwardAxis, contactNormal);
 
         Vector3 relativeVelocity = velocity - connectionVelocity;
 
