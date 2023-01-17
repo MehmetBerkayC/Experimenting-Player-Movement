@@ -36,16 +36,19 @@ public class MovingSphere : MonoBehaviour
 
     Rigidbody body, connectedBody, previousConnectedBody;
 
-    Vector3 velocity, desiredVelocity, connectionVelocity;
+    Vector3 velocity, connectionVelocity;
 
     Vector3 connectionWorldPosition, connectionLocalPosition;
 
     Vector3 contactNormal,  // Slope's normal
             steepNormal, // Steep contact's normal -Walls-
-            climbNormal; // Climbable surface normal up to 45 Degrees overhang
+            climbNormal, // Climbable surface normal up to 45 Degrees overhang
+            lastClimbNormal; // for crevasses(special case)
 
     // Object's Y axis relative to its position, not gravity - Same for X and Z
-    Vector3 upAxis, rightAxis, forwardAxis; 
+    Vector3 upAxis, rightAxis, forwardAxis;
+
+    Vector2 playerInput;
 
     // To see which jump are we at
     int jumpPhase;
@@ -57,18 +60,19 @@ public class MovingSphere : MonoBehaviour
 
     float minGroundDotProduct, minStairsDotProduct, minClimbDotProduct;
 
-    bool desiredJump; // Willing to jump or not
-    
+    bool desiredJump, // Willing to jump or not
+         desiresClimbing; // Climb or don't
+
     // Short way to define a single-statement readonly property
     bool OnGround => groundContactCount > 0; // returns true if at least 1 contact available
     bool OnSteep => steepContactCount > 0;
-    bool Climbing => climbContactCount > 0;
+    bool Climbing => climbContactCount > 0 && stepsSinceLastJump > 2;
 
     private void Awake()
     {
         body = GetComponent<Rigidbody>();
         body.useGravity = false; // dont use standard gravity
-        meshRenderer.material = Climbing ? climbingMaterial : normalMaterial;
+        meshRenderer = GetComponent<MeshRenderer>();
         OnValidate();
     }
 
@@ -84,8 +88,6 @@ public class MovingSphere : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        // Easy access to the inputs
-        Vector2 playerInput;
         playerInput.x = Input.GetAxis("Horizontal");
         playerInput.y = Input.GetAxis("Vertical");
 
@@ -121,16 +123,17 @@ public class MovingSphere : MonoBehaviour
             forwardAxis = ProjectDirectionOnPlane(Vector3.forward, upAxis);
         }
 
-        desiredVelocity = new Vector3(playerInput.x, 0f, playerInput.y) * maxSpeed;
-
         // We might end up not invoking FixedUpdate next frame, in which case desiredJump is set back to false and the desire to jump will be forgotten.
         // We can prevent that by combining the check with its previous value via the boolean OR operation, or the OR assignment.
         // That way it remains true once enabled until we explicitly set it back to false.
         desiredJump |= Input.GetButtonDown("Jump");
+        desiresClimbing = Input.GetKey(KeyCode.C);
 
         /// Color for Debugging
         // ColorOnGroundContacts();
         // ColorOnAir();
+        meshRenderer.material = Climbing ? climbingMaterial : normalMaterial;
+
     }
 
     // For the physics updates FixedUpdate is prefered
@@ -154,7 +157,18 @@ public class MovingSphere : MonoBehaviour
             Jump(gravity);
         }
 
-        if (!Climbing)
+        if (Climbing)
+        {
+            velocity -= contactNormal * (maxClimbAcceleration * 0.9f * Time.deltaTime);
+        }else if (OnGround && velocity.sqrMagnitude < 0.01f)
+        {
+            velocity += contactNormal * (Vector3.Dot(gravity, contactNormal) * Time.deltaTime);
+        }
+        else if(desiresClimbing && OnGround)
+        {
+            velocity += (gravity - contactNormal * (maxClimbAcceleration * 0.9f)) * Time.deltaTime;
+        }
+        else
         {
             velocity += gravity * Time.deltaTime;
         }
@@ -173,7 +187,16 @@ public class MovingSphere : MonoBehaviour
     {
         if (Climbing)
         {
-            groundContactCount = climbContactCount;
+            if(climbContactCount > 1)
+            {
+                climbNormal.Normalize();
+                float upDot = Vector3.Dot(upAxis, climbNormal);
+                if(upDot >= minGroundDotProduct)
+                {
+                    climbNormal = lastClimbNormal;
+                }
+            }
+            groundContactCount = 1;
             contactNormal = climbNormal;
             return true;
         }
@@ -280,10 +303,11 @@ public class MovingSphere : MonoBehaviour
                         connectedBody = collision.rigidbody;
                     }
                 }
-                if(upDot >= minClimbDotProduct && (climbMask & (1 << layer)) != 0)
+                if(desiresClimbing && upDot >= minClimbDotProduct && (climbMask & (1 << layer)) != 0)
                 {
                     climbContactCount += 1;
-                    climbNormal = normal;
+                    climbNormal += normal;
+                    lastClimbNormal = normal;
                     connectedBody = collision.rigidbody;
                 }
             }
@@ -376,21 +400,26 @@ public class MovingSphere : MonoBehaviour
 
     void AdjustVelocity()
     {
+        float acceleration, speed;
         Vector3 xAxis, zAxis;
         if (Climbing)
         {
+            acceleration = maxClimbAcceleration;
+            speed = maxClimbSpeed;
             xAxis = Vector3.Cross(contactNormal, upAxis);
             zAxis = upAxis;
         }
         else
         {
+            acceleration = OnGround ? maxAcceleration : maxAirAcceleration;
+            speed = OnGround && desiresClimbing ? maxClimbSpeed : maxSpeed;
             xAxis = rightAxis;
             zAxis = forwardAxis;
         }
 
         // Vectors aligned with the ground, but they are only of unit length when the ground is perfectly flat. So normalized to get proper directions.
-        xAxis = ProjectDirectionOnPlane(rightAxis, contactNormal);
-        zAxis = ProjectDirectionOnPlane(forwardAxis, contactNormal);
+        xAxis = ProjectDirectionOnPlane(xAxis, contactNormal);
+        zAxis = ProjectDirectionOnPlane(zAxis, contactNormal);
 
         Vector3 relativeVelocity = velocity - connectionVelocity;
 
@@ -398,14 +427,12 @@ public class MovingSphere : MonoBehaviour
         float currentX = Vector3.Dot(relativeVelocity, xAxis);
         float currentZ = Vector3.Dot(relativeVelocity, zAxis);
 
-        // if onground use acceleration else air acceleration
-        float acceleration = OnGround ? maxAcceleration : maxAirAcceleration;
-        
+      
         float maxSpeedChange = acceleration * Time.deltaTime;
 
         // Calculate new X and Z speeds relative to the ground
-        float newX = Mathf.MoveTowards(currentX, desiredVelocity.x, maxSpeedChange);
-        float newZ = Mathf.MoveTowards(currentZ, desiredVelocity.z, maxSpeedChange);
+        float newX = Mathf.MoveTowards(currentX, playerInput.x * speed, maxSpeedChange);
+        float newZ = Mathf.MoveTowards(currentZ, playerInput.y * speed, maxSpeedChange);
 
         // Adjust the velocity by adding the differences between the new and old speeds along the relative axes.
         velocity += xAxis * (newX - currentX) + zAxis * (newZ - currentZ);
