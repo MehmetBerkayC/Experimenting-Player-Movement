@@ -22,13 +22,31 @@ public class MovingSphere : MonoBehaviour
     [SerializeField, Range(90, 180)] float maxClimbAngle = 140f;
     [SerializeField, Range(0f, 100f)] float maxClimbSpeed = 2f, maxClimbAcceleration = 20f;
 
+    // Swimming
+    [SerializeField] float submergenceOffset = 0.5f;
+    [SerializeField, Min(0.1f)] float submergenceRange = 1f;
+    [SerializeField, Range(0f, 10f)] float waterDrag = 1f;
+    [SerializeField, Min(0f)] float buoyancy = 1f;
+    [SerializeField, Range(0.01f, 1f)] float swimTreshold = 0.5f;
+    [SerializeField, Range(0f, 100f)] float maxSwimSpeed = 5f, maxSwimAcceleration = 5f;
+
 
     // Snapping
     [SerializeField, Range(0f, 100f)] float maxSnapSpeed = 100f;
     [SerializeField, Min(0f)] float probeDistance = 1f; // Searching distance below sphere (for snapping)
-    [SerializeField] LayerMask probeMask = -1, stairsMask = -1, climbMask = -1; // -1 matches all layers, manually exclude raycasting and agent layers
 
-    [SerializeField] Material normalMaterial = default, climbingMaterial = default;
+    // -1 matches all layers, manually exclude raycasting and agent layers etc.
+    [SerializeField]
+    LayerMask probeMask = -1,
+              stairsMask = -1,
+              climbMask = -1,
+              waterMask = 0;
+
+    [SerializeField]
+    Material normalMaterial = default,
+             climbingMaterial = default,
+             swimmingMaterial = default;
+    
     MeshRenderer meshRenderer;
 
     [SerializeField]
@@ -63,10 +81,14 @@ public class MovingSphere : MonoBehaviour
     bool desiredJump, // Willing to jump or not
          desiresClimbing; // Climb or don't
 
+    float submergence;
+
     // Short way to define a single-statement readonly property
     bool OnGround => groundContactCount > 0; // returns true if at least 1 contact available
     bool OnSteep => steepContactCount > 0;
     bool Climbing => climbContactCount > 0 && stepsSinceLastJump > 2;
+    bool InWater => submergence > 0f;
+    bool Swimming => submergence >= swimTreshold;
 
     private void Awake()
     {
@@ -132,7 +154,12 @@ public class MovingSphere : MonoBehaviour
         /// Color for Debugging
         // ColorOnGroundContacts();
         // ColorOnAir();
-        meshRenderer.material = Climbing ? climbingMaterial : normalMaterial;
+        meshRenderer.material = 
+            Climbing ? climbingMaterial :
+            Swimming ? swimmingMaterial : normalMaterial;
+
+        // To test submergence value
+        //meshRenderer.material.color = Color.white * submergence;
 
     }
 
@@ -142,6 +169,11 @@ public class MovingSphere : MonoBehaviour
     {
         // Opposite direction of the gravity vector is our upwards axis
         Vector3 gravity = CustomGravity.GetGravity(body.position, out upAxis);
+
+        if (InWater) // Apply drag first so acceleration is possible
+        {
+            velocity *= 1f - waterDrag * submergence * Time.deltaTime;
+        }
 
         // On ground or not
         UpdateState();
@@ -160,7 +192,12 @@ public class MovingSphere : MonoBehaviour
         if (Climbing)
         {
             velocity -= contactNormal * (maxClimbAcceleration * 0.9f * Time.deltaTime);
-        }else if (OnGround && velocity.sqrMagnitude < 0.01f)
+        }
+        else if (InWater)
+        {
+            velocity += gravity * ((1f - buoyancy * submergence) * Time.deltaTime);
+        }
+        else if (OnGround && velocity.sqrMagnitude < 0.01f)
         {
             velocity += contactNormal * (Vector3.Dot(gravity, contactNormal) * Time.deltaTime);
         }
@@ -209,6 +246,7 @@ public class MovingSphere : MonoBehaviour
         contactNormal = steepNormal = connectionVelocity = climbNormal = Vector3.zero;
         previousConnectedBody = connectedBody;
         connectedBody = null;
+        submergence = 0f;
     }
 
     void UpdateState()
@@ -217,7 +255,7 @@ public class MovingSphere : MonoBehaviour
         stepsSinceLastJump += 1;
         velocity = body.velocity;
 
-        if (CheckClimbing() || OnGround || SnapToGround() || CheckSteepContacts()) // if on ground or trying to stay
+        if (CheckClimbing() || CheckSwimming() || OnGround || SnapToGround() || CheckSteepContacts()) // if on ground or trying to stay
         {
             stepsSinceLastGrounded = 0;
 
@@ -242,6 +280,47 @@ public class MovingSphere : MonoBehaviour
             {
                 UpdateConnectionState();
             }
+        }
+    }
+
+    bool CheckSwimming()
+    {
+        if (Swimming)
+        {
+            groundContactCount = 0;
+            contactNormal = upAxis;
+            return true;
+        }
+        return false;
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if((waterMask & (1 << other.gameObject.layer)) != 0)
+        {
+            EvaluateSubmergence();
+        }    
+    }
+
+    private void OnTriggerStay(Collider other)
+    {
+        if ((waterMask & (1 << other.gameObject.layer)) != 0)
+        {
+            EvaluateSubmergence();
+        }
+    }
+
+    void EvaluateSubmergence()
+    {
+        if(Physics.Raycast(body.position + upAxis * submergenceOffset, -upAxis, out RaycastHit hit, submergenceRange + 1f, waterMask, QueryTriggerInteraction.Collide))
+        {
+            // Slowly submerging to water
+            submergence = 1f - hit.distance / submergenceRange;
+        }
+        else 
+        {
+            // Fully submerged in water
+            submergence = 1f;
         }
     }
 
@@ -315,6 +394,53 @@ public class MovingSphere : MonoBehaviour
     }
 
 
+    void AdjustVelocity()
+    {
+        float acceleration, speed;
+        Vector3 xAxis, zAxis;
+        if (Climbing)
+        {
+            acceleration = maxClimbAcceleration;
+            speed = maxClimbSpeed;
+            xAxis = Vector3.Cross(contactNormal, upAxis);
+            zAxis = upAxis;
+        }
+        else if (InWater)
+        {
+            float swimFactor = Mathf.Min(1f, submergence / swimTreshold);
+            acceleration = Mathf.LerpUnclamped(OnGround ? maxAcceleration : maxAirAcceleration, maxSwimAcceleration, swimFactor);
+            speed = Mathf.LerpUnclamped(maxSpeed, maxSwimSpeed, swimFactor);
+            xAxis = rightAxis;
+            zAxis = forwardAxis;
+        }
+        else
+        {
+            acceleration = OnGround ? maxAcceleration : maxAirAcceleration;
+            speed = OnGround && desiresClimbing ? maxClimbSpeed : maxSpeed;
+            xAxis = rightAxis;
+            zAxis = forwardAxis;
+        }
+
+        // Vectors aligned with the ground, but they are only of unit length when the ground is perfectly flat. So normalized to get proper directions.
+        xAxis = ProjectDirectionOnPlane(xAxis, contactNormal);
+        zAxis = ProjectDirectionOnPlane(zAxis, contactNormal);
+
+        Vector3 relativeVelocity = velocity - connectionVelocity;
+
+        // Project the current velocity on both vectors to get the relative X and Z speeds.
+        float currentX = Vector3.Dot(relativeVelocity, xAxis);
+        float currentZ = Vector3.Dot(relativeVelocity, zAxis);
+
+      
+        float maxSpeedChange = acceleration * Time.deltaTime;
+
+        // Calculate new X and Z speeds relative to the ground
+        float newX = Mathf.MoveTowards(currentX, playerInput.x * speed, maxSpeedChange);
+        float newZ = Mathf.MoveTowards(currentZ, playerInput.y * speed, maxSpeedChange);
+
+        // Adjust the velocity by adding the differences between the new and old speeds along the relative axes.
+        velocity += xAxis * (newX - currentX) + zAxis * (newZ - currentZ);
+    }
 
     // return true if steep contacts are converted into a virtual ground normal 
     bool CheckSteepContacts()
@@ -398,45 +524,6 @@ public class MovingSphere : MonoBehaviour
         
     }
 
-    void AdjustVelocity()
-    {
-        float acceleration, speed;
-        Vector3 xAxis, zAxis;
-        if (Climbing)
-        {
-            acceleration = maxClimbAcceleration;
-            speed = maxClimbSpeed;
-            xAxis = Vector3.Cross(contactNormal, upAxis);
-            zAxis = upAxis;
-        }
-        else
-        {
-            acceleration = OnGround ? maxAcceleration : maxAirAcceleration;
-            speed = OnGround && desiresClimbing ? maxClimbSpeed : maxSpeed;
-            xAxis = rightAxis;
-            zAxis = forwardAxis;
-        }
-
-        // Vectors aligned with the ground, but they are only of unit length when the ground is perfectly flat. So normalized to get proper directions.
-        xAxis = ProjectDirectionOnPlane(xAxis, contactNormal);
-        zAxis = ProjectDirectionOnPlane(zAxis, contactNormal);
-
-        Vector3 relativeVelocity = velocity - connectionVelocity;
-
-        // Project the current velocity on both vectors to get the relative X and Z speeds.
-        float currentX = Vector3.Dot(relativeVelocity, xAxis);
-        float currentZ = Vector3.Dot(relativeVelocity, zAxis);
-
-      
-        float maxSpeedChange = acceleration * Time.deltaTime;
-
-        // Calculate new X and Z speeds relative to the ground
-        float newX = Mathf.MoveTowards(currentX, playerInput.x * speed, maxSpeedChange);
-        float newZ = Mathf.MoveTowards(currentZ, playerInput.y * speed, maxSpeedChange);
-
-        // Adjust the velocity by adding the differences between the new and old speeds along the relative axes.
-        velocity += xAxis * (newX - currentX) + zAxis * (newZ - currentZ);
-    }
 
 
     bool SnapToGround() 
@@ -456,7 +543,7 @@ public class MovingSphere : MonoBehaviour
         }
 
         // Use Raycasting to see if there is ground below, get info as to what we hit, exclude other spheres from raycasts
-        if(!Physics.Raycast(body.position, -upAxis, out RaycastHit hitInfo, probeDistance, probeMask))
+        if(!Physics.Raycast(body.position, -upAxis, out RaycastHit hitInfo, probeDistance, probeMask, QueryTriggerInteraction.Ignore))
         {
             return false;
         }

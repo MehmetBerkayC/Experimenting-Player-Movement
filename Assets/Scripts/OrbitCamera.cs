@@ -75,7 +75,7 @@ public class OrbitCamera : MonoBehaviour
         Vector3 castDirection = castLine / castDistance;
 
         // Raycast towards camera from sphere, if anything is between, pull camera there
-        if(Physics.BoxCast(castFrom, CameraHalfExtends, castDirection, out RaycastHit hit, lookRotation, castDistance, obstructionMask))
+        if(Physics.BoxCast(castFrom, CameraHalfExtends, castDirection, out RaycastHit hit, lookRotation, castDistance, obstructionMask, QueryTriggerInteraction.Ignore))
         {
             // back the camera up as far back as available
             rectPosition = castFrom + castDirection * hit.distance;

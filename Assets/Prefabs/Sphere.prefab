@@ -127,6 +127,15 @@ MonoBehaviour:
   jumpHeight: 2
   maxAirJumps: 1
   maxClimbAngle: 140
+  maxClimbSpeed: 2
+  maxClimbAcceleration: 15
+  submergenceOffset: 0.5
+  submergenceRange: 1
+  waterDrag: 1
+  buoyancy: 1.1
+  swimTreshold: 0.5
+  maxSwimSpeed: 5
+  maxSwimAcceleration: 5
   maxSnapSpeed: 100
   probeDistance: 1
   probeMask:
@@ -138,8 +147,12 @@ MonoBehaviour:
   climbMask:
     serializedVersion: 2
     m_Bits: 371
+  waterMask:
+    serializedVersion: 2
+    m_Bits: 16
   normalMaterial: {fileID: 2100000, guid: 7023fa06fb36d4f4488cc3403cb370b8, type: 2}
   climbingMaterial: {fileID: 2100000, guid: 68deb1c40bcf4e3459655e65cec26381, type: 2}
+  swimmingMaterial: {fileID: 2100000, guid: fb7ec3308908c4645877ae804c8d6570, type: 2}
   playerInputSpace: {fileID: 0}
 --- !u!96 &8037914559211182122
 TrailRenderer:
