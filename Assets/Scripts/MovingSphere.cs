@@ -307,7 +307,7 @@ public class MovingSphere : MonoBehaviour
     {
         if((waterMask & (1 << other.gameObject.layer)) != 0)
         {
-            EvaluateSubmergence();
+            EvaluateSubmergence(other);
         }    
     }
 
@@ -315,11 +315,11 @@ public class MovingSphere : MonoBehaviour
     {
         if ((waterMask & (1 << other.gameObject.layer)) != 0)
         {
-            EvaluateSubmergence();
+            EvaluateSubmergence(other);
         }
     }
 
-    void EvaluateSubmergence()
+    void EvaluateSubmergence(Collider collider)
     {
         if(Physics.Raycast(body.position + upAxis * submergenceOffset, -upAxis, out RaycastHit hit, submergenceRange + 1f, waterMask, QueryTriggerInteraction.Collide))
         {
@@ -330,6 +330,11 @@ public class MovingSphere : MonoBehaviour
         {
             // Fully submerged in water
             submergence = 1f;
+        }
+
+        if (Swimming)
+        {
+            connectedBody = collider.attachedRigidbody;
         }
     }
 
@@ -358,6 +363,11 @@ public class MovingSphere : MonoBehaviour
 
     void EvaluateCollision (Collision collision)
     {
+        if (Swimming)
+        {
+            return;
+        }
+
         // Compare collisioned gameobjects layer
         int layer = collision.gameObject.layer;
         float minDot = GetMinDot(layer); // Ground, Stairs or Climbable Dot Product
