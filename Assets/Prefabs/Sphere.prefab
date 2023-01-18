@@ -132,7 +132,7 @@ MonoBehaviour:
   submergenceOffset: 0.5
   submergenceRange: 1
   waterDrag: 1
-  buoyancy: 1.1
+  buoyancy: 1
   swimTreshold: 0.5
   maxSwimSpeed: 5
   maxSwimAcceleration: 5

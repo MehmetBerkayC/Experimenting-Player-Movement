@@ -66,7 +66,7 @@ public class MovingSphere : MonoBehaviour
     // Object's Y axis relative to its position, not gravity - Same for X and Z
     Vector3 upAxis, rightAxis, forwardAxis;
 
-    Vector2 playerInput;
+    Vector3 playerInput;
 
     // To see which jump are we at
     int jumpPhase;
@@ -112,13 +112,14 @@ public class MovingSphere : MonoBehaviour
     {
         playerInput.x = Input.GetAxis("Horizontal");
         playerInput.y = Input.GetAxis("Vertical");
+        playerInput.z = Swimming ? Input.GetAxis("Dive") : 0f;
 
         /// Choose one of them for your sphere (Without Rigidbody)
         // JoystickBehavior(playerInput);
         // BasicBouncySphereWithinArea(playerInput);
 
         // With Rigidbody
-        playerInput = Vector2.ClampMagnitude(playerInput, 1f);
+        playerInput = Vector3.ClampMagnitude(playerInput, 1f);
 
         // Player Movement Relative to the Camera POV
         if (playerInputSpace)
@@ -145,11 +146,19 @@ public class MovingSphere : MonoBehaviour
             forwardAxis = ProjectDirectionOnPlane(Vector3.forward, upAxis);
         }
 
-        // We might end up not invoking FixedUpdate next frame, in which case desiredJump is set back to false and the desire to jump will be forgotten.
-        // We can prevent that by combining the check with its previous value via the boolean OR operation, or the OR assignment.
-        // That way it remains true once enabled until we explicitly set it back to false.
-        desiredJump |= Input.GetButtonDown("Jump");
-        desiresClimbing = Input.GetKey(KeyCode.C);
+        if (Swimming)
+        {
+            desiresClimbing = false;
+        }
+        else
+        {
+            // We might end up not invoking FixedUpdate next frame, in which case desiredJump is set back to false and the desire to jump will be forgotten.
+            // We can prevent that by combining the check with its previous value via the boolean OR operation, or the OR assignment.
+            // That way it remains true once enabled until we explicitly set it back to false.
+            desiredJump |= Input.GetButtonDown("Jump");
+            desiresClimbing = Input.GetKey(KeyCode.C);
+        }
+        
 
         /// Color for Debugging
         // ColorOnGroundContacts();
@@ -440,6 +449,13 @@ public class MovingSphere : MonoBehaviour
 
         // Adjust the velocity by adding the differences between the new and old speeds along the relative axes.
         velocity += xAxis * (newX - currentX) + zAxis * (newZ - currentZ);
+
+        if (Swimming)
+        {
+            float currentY = Vector3.Dot(relativeVelocity, upAxis);
+            float newY = Mathf.MoveTowards(currentY, playerInput.z * speed, maxSpeedChange);
+            velocity += upAxis * (newY - currentY);
+        }
     }
 
     // return true if steep contacts are converted into a virtual ground normal 
@@ -504,6 +520,11 @@ public class MovingSphere : MonoBehaviour
         jumpPhase += 1;
             
         float jumpSpeed = Mathf.Sqrt(2f * gravity.magnitude * jumpHeight);
+
+        if (InWater)
+        {
+            jumpSpeed += Mathf.Max(0f, 1f - submergence / swimTreshold);
+        }
 
         // this way we get upward momentum while wall jumping, ground won't be affected
         jumpDirection = (jumpDirection + upAxis).normalized;
