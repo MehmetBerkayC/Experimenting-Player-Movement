@@ -555,7 +555,10 @@ public class MovingSphere : MonoBehaviour
         
     }
 
-
+    public void PreventSnapToGround()
+    {
+        stepsSinceLastJump = -1;
+    }
 
     bool SnapToGround() 
     {
