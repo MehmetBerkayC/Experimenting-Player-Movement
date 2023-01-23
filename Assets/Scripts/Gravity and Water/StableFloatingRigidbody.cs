@@ -6,6 +6,7 @@ using UnityEngine;
 public class StableFloatingRigidbody : MonoBehaviour
 {
     [SerializeField] bool floatToSleep = false;
+    [SerializeField] float destroyObjectBelowPosition = -50f;
 
     // In Water
     [SerializeField] float submergenceOffset = 0.5f;
@@ -32,6 +33,11 @@ public class StableFloatingRigidbody : MonoBehaviour
 
     private void FixedUpdate()
     {
+        if(body.position.y < destroyObjectBelowPosition)
+        {
+            Destroy(gameObject);
+        }
+
         if (floatToSleep)
         {
             if (body.IsSleeping()) // RB asleep
