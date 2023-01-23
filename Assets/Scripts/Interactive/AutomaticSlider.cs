@@ -3,12 +3,13 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
 
-[System.Serializable] 
-public class OnValueChangedEvent : UnityEvent<float> { }
+
 
 public class AutomaticSlider : MonoBehaviour
 {
-    [SerializeField, Min(0.01f)] float duration = 1f;
+	[System.Serializable] public class OnValueChangedEvent : UnityEvent<float> { }
+
+	[SerializeField, Min(0.01f)] float duration = 1f;
     [SerializeField] OnValueChangedEvent onValueChanged = default;
 	[SerializeField] bool autoReverse = false, smoothStep = false;
 
