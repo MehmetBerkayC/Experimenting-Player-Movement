@@ -32,6 +32,19 @@ public class OrbitCamera : MonoBehaviour
     Quaternion gravityAlignment = Quaternion.identity;
     Quaternion orbitRotation;
 
+    // Half of the width, height and depth of camera's view properties
+    Vector3 CameraHalfExtends
+    {
+        get
+        {
+            Vector3 halfExtends;
+            halfExtends.y = regularCamera.nearClipPlane * Mathf.Tan(0.5f * Mathf.Deg2Rad * regularCamera.fieldOfView);
+            halfExtends.x = halfExtends.y * regularCamera.aspect;
+            halfExtends.z = 0f;
+            return halfExtends;
+        }
+    }
+
     void OnValidate()
     {
         if (maxVerticalAngle < minVerticalAngle)
@@ -86,18 +99,7 @@ public class OrbitCamera : MonoBehaviour
         transform.SetPositionAndRotation(lookPosition, lookRotation);
     }
 
-    // Half of the width, height and depth of camera's view properties
-    Vector3 CameraHalfExtends 
-    {
-        get
-        {
-            Vector3 halfExtends;
-            halfExtends.y = regularCamera.nearClipPlane * Mathf.Tan(0.5f * Mathf.Deg2Rad * regularCamera.fieldOfView);
-            halfExtends.x = halfExtends.y * regularCamera.aspect;
-            halfExtends.z = 0f;
-            return halfExtends;
-        }
-    }
+
 
     void UpdateGravityAlignment()
     {

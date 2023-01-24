@@ -4,10 +4,6 @@ using UnityEngine;
 
 public class MovingSphere : MonoBehaviour
 {
-    /// Limited Area and Bounciness 
-    [SerializeField] Rect allowedArea = new Rect(-5f, -5f, 10f, 10f);
-    [SerializeField, Range(0f, 1f)] float bounciness = 0.5f;
-
     // Ground Control
     [SerializeField, Range(0f, 100f)] float maxAcceleration = 10f;
     [SerializeField, Range(0f, 100f)] float maxSpeed = 10f;
@@ -49,8 +45,17 @@ public class MovingSphere : MonoBehaviour
     
     MeshRenderer meshRenderer;
 
+    // Ball
+    [SerializeField] Transform ball = default;
+    [SerializeField, Min(0f)] float ballAlignSpeed = 180f;
+    [SerializeField, Min(0f)] float ballAirRotation = 0.5f, ballSwimRotation = 2f;
+    Vector3 lastContactNormal, lastSteepNormal, lastConnectionVelocity;
+
+
     [SerializeField]
     Transform playerInputSpace = default;
+
+    [SerializeField, Min(0.1f)] float ballRadius = 0.5f;
 
     Rigidbody body, connectedBody, previousConnectedBody;
 
@@ -90,14 +95,6 @@ public class MovingSphere : MonoBehaviour
     bool InWater => submergence > 0f;
     bool Swimming => submergence >= swimTreshold;
 
-    private void Awake()
-    {
-        body = GetComponent<Rigidbody>();
-        body.useGravity = false; // dont use standard gravity
-        meshRenderer = GetComponent<MeshRenderer>();
-        OnValidate();
-    }
-
     // With OnValidate, treshold remains synchronized with the angle when we change it via the inspector while in play mode.
     private void OnValidate()
     {
@@ -107,38 +104,28 @@ public class MovingSphere : MonoBehaviour
         minClimbDotProduct = Mathf.Cos(maxClimbAngle * Mathf.Deg2Rad);
     }
 
+    private void Awake()
+    {
+        body = GetComponent<Rigidbody>();
+        body.useGravity = false; // dont use standard gravity
+        meshRenderer = ball.GetComponent<MeshRenderer>();
+        OnValidate();
+    }
+
     // Update is called once per frame
     void Update()
     {
         playerInput.x = Input.GetAxis("Horizontal");
-        playerInput.y = Input.GetAxis("Vertical");
-        playerInput.z = Swimming ? Input.GetAxis("Dive") : 0f;
+        playerInput.z = Input.GetAxis("Vertical");
+        playerInput.y = Swimming ? Input.GetAxis("Dive") : 0f;
 
-        /// Choose one of them for your sphere (Without Rigidbody)
-        // JoystickBehavior(playerInput);
-        // BasicBouncySphereWithinArea(playerInput);
-
-        // With Rigidbody
         playerInput = Vector3.ClampMagnitude(playerInput, 1f);
 
         // Player Movement Relative to the Camera POV
         if (playerInputSpace)
         {
-            /// if we just take the camera's transform direction, camera's Y movement affects sphere's movement
-            //desiredVelocity = playerInputSpace.TransformDirection(playerInput.x, 0f, playerInput.y) * maxSpeed;
-
-            /// Movement independent of Camera's Y Axis 
-            //Vector3 forward = playerInputSpace.forward;
-            //forward.y = 0f;
-            //forward.Normalize();
-
-            //Vector3 right = playerInputSpace.right;
-            //right.y = 0f;
-            //right.Normalize();
-
             rightAxis = ProjectDirectionOnPlane(playerInputSpace.right, upAxis);
             forwardAxis = ProjectDirectionOnPlane(playerInputSpace.forward, upAxis);
-
         }
         else // Keep Player input in world space
         {
@@ -158,39 +145,123 @@ public class MovingSphere : MonoBehaviour
             desiredJump |= Input.GetButtonDown("Jump");
             desiresClimbing = Input.GetKey(KeyCode.C);
         }
-        
+
+        UpdateBall();
 
         /// Color for Debugging
         // ColorOnGroundContacts();
         // ColorOnAir();
-        meshRenderer.material = 
-            Climbing ? climbingMaterial :
-            Swimming ? swimmingMaterial : normalMaterial;
 
         // To test submergence value
         //meshRenderer.material.color = Color.white * submergence;
 
     }
 
-    // For the physics updates FixedUpdate is prefered
-    // this way the sphere doesn't get jittery when colliding something
+    // Visual Updating
+    void UpdateBall()
+    {
+        Material ballMaterial = normalMaterial;
+        Vector3 rotationPlaneNormal = lastContactNormal;
+        float rotationFactor = 1f;
+
+        if (Climbing)
+        {
+            ballMaterial = climbingMaterial;
+        }
+        else if (Swimming)
+        {
+            ballMaterial = swimmingMaterial;
+            rotationFactor = ballSwimRotation;
+
+        }
+        else if (!OnGround)
+        {
+            if (OnSteep)
+            {
+                lastContactNormal = lastSteepNormal;
+            }
+            else
+            {
+                rotationFactor = ballAirRotation;
+            }
+        }
+
+        meshRenderer.material = ballMaterial;
+
+        Vector3 movement = (body.velocity - lastConnectionVelocity) * Time.deltaTime;
+
+        // Stable Y movement in complex gravity
+        movement -= rotationPlaneNormal * Vector3.Dot(movement, rotationPlaneNormal);
+
+        float distance = movement.magnitude;
+
+        // Prevent rotation along with connected bodies(platforms)
+        Quaternion rotation = ball.localRotation;
+
+        if (connectedBody && connectedBody == previousConnectedBody)
+        {
+            rotation = Quaternion.Euler(connectedBody.angularVelocity * (Mathf.Rad2Deg * Time.deltaTime)) * rotation;
+
+            if (distance < 0.001f)
+            {
+                ball.localRotation = rotation;
+                return;
+            }
+        }
+        else if (distance < 0.001f)
+        {
+            return;
+        }
+
+        float angle = distance * rotationFactor * (180f / Mathf.PI) / ballRadius;
+
+        Vector3 rotationAxis = Vector3.Cross(rotationPlaneNormal, movement).normalized;
+
+        rotation = Quaternion.Euler(rotationAxis * angle) * rotation;
+
+        if (ballAlignSpeed > 0f)
+        {
+            rotation = AlignBallRotation(rotationAxis, rotation, distance);
+        }
+
+        ball.localRotation = rotation;
+    }
+    Quaternion AlignBallRotation(Vector3 rotationAxis, Quaternion rotation, float traveledDistance)
+    {
+        Vector3 ballAxis = ball.up;
+        float dot = Mathf.Clamp(Vector3.Dot(ballAxis, rotationAxis), -1f, 1f);
+        float angle = Mathf.Acos(dot) * Mathf.Rad2Deg;
+        float maxAngle = ballAlignSpeed * traveledDistance;
+
+        Quaternion newAlignment = Quaternion.FromToRotation(ballAxis, rotationAxis) * rotation;
+
+        if (angle <= maxAngle)
+        {
+            return newAlignment;
+        }
+        else
+        {
+            return Quaternion.SlerpUnclamped(rotation, newAlignment, maxAngle / angle);
+        }
+    }
+
+    // For the physics updates FixedUpdate is prefered, this way the sphere doesn't get jittery when colliding something
     private void FixedUpdate()
     {
         // Opposite direction of the gravity vector is our upwards axis
         Vector3 gravity = CustomGravity.GetGravity(body.position, out upAxis);
+
+        // On ground or not
+        UpdateState();
 
         if (InWater) // Apply drag first so acceleration is possible
         {
             velocity *= 1f - waterDrag * submergence * Time.deltaTime;
         }
 
-        // On ground or not
-        UpdateState();
-
         // Calculate velocity relative to the ground angles (won't bounce / lose grip)
         AdjustVelocity();
         
-    
         // Jump
         if (desiredJump)
         {
@@ -223,34 +294,13 @@ public class MovingSphere : MonoBehaviour
         ClearState();
     }
 
-    // Need to project directions on a plane to make Axes relative to ground we are on
-    Vector3 ProjectDirectionOnPlane(Vector3 direction, Vector3 normal)
-    {
-        return (direction - normal * Vector3.Dot(direction, normal)).normalized;
-    }
-
-    bool CheckClimbing()
-    {
-        if (Climbing)
-        {
-            if(climbContactCount > 1)
-            {
-                climbNormal.Normalize();
-                float upDot = Vector3.Dot(upAxis, climbNormal);
-                if(upDot >= minGroundDotProduct)
-                {
-                    climbNormal = lastClimbNormal;
-                }
-            }
-            groundContactCount = 1;
-            contactNormal = climbNormal;
-            return true;
-        }
-        return false;
-    }
-
     void ClearState()
     {
+        // For Visual Alignment
+        lastContactNormal = contactNormal;
+        lastSteepNormal = steepNormal;
+        lastConnectionVelocity = connectionVelocity;
+
         groundContactCount = steepContactCount = climbContactCount = 0;
         contactNormal = steepNormal = connectionVelocity = climbNormal = Vector3.zero;
         previousConnectedBody = connectedBody;
@@ -285,12 +335,54 @@ public class MovingSphere : MonoBehaviour
 
         if (connectedBody)
         {
-            if(connectedBody.isKinematic || connectedBody.mass >= body.mass)
+            if (connectedBody.isKinematic || connectedBody.mass >= body.mass)
             {
                 UpdateConnectionState();
             }
         }
     }
+
+
+
+    bool CheckClimbing()
+    {
+        if (Climbing)
+        {
+            if(climbContactCount > 1)
+            {
+                climbNormal.Normalize();
+                float upDot = Vector3.Dot(upAxis, climbNormal);
+                if(upDot >= minGroundDotProduct)
+                {
+                    climbNormal = lastClimbNormal;
+                }
+            }
+            groundContactCount = 1;
+            contactNormal = climbNormal;
+            return true;
+        }
+        return false;
+    }
+
+    // return true if steep contacts are converted into a virtual ground normal 
+    bool CheckSteepContacts()
+    {
+        if (steepContactCount > 1) // if multiple steep surfaces present
+        {
+            steepNormal.Normalize();
+
+            float upDot = Vector3.Dot(upAxis, steepNormal);
+            if (upDot >= minGroundDotProduct) // check if the result can be classified as ground
+            {
+                steepContactCount = 0;
+                groundContactCount = 1;
+                contactNormal = steepNormal;
+                return true; // conversion accomplished
+            }
+        }
+        return false; // failed
+    }
+
 
     bool CheckSwimming()
     {
@@ -350,6 +442,119 @@ public class MovingSphere : MonoBehaviour
         connectionWorldPosition = body.position;
         connectionLocalPosition = connectedBody.transform.InverseTransformPoint(connectionWorldPosition);
 
+    }
+
+    void Jump(Vector3 gravity)
+    {
+        Vector3 jumpDirection;
+
+        if (OnGround)
+        {
+            jumpDirection = contactNormal;
+        }
+        else if (OnSteep)
+        {
+            jumpDirection = steepNormal;
+            jumpPhase = 0; // reset air jumps
+        }
+        else if (maxAirJumps > 0 && jumpPhase <= maxAirJumps) // if able to jump 
+        {
+            if (jumpPhase == 0) // prevent extra air jump while falling off a surface without jumping
+            {
+                jumpPhase = 1;
+            }
+
+            jumpDirection = contactNormal;
+        }
+        else
+        {
+            return;
+        }
+
+        stepsSinceLastJump = 0; // jumping, so reset
+        jumpPhase += 1;
+
+        float jumpSpeed = Mathf.Sqrt(2f * gravity.magnitude * jumpHeight);
+
+        if (InWater)
+        {
+            jumpSpeed += Mathf.Max(0f, 1f - submergence / swimTreshold);
+        }
+
+        // this way we get upward momentum while wall jumping, ground won't be affected
+        jumpDirection = (jumpDirection + upAxis).normalized;
+
+        float alignedSpeed = Vector3.Dot(velocity, jumpDirection);
+
+        // We don't want limitless jumpspeed which means,
+        // repeated jumping shouldn't add more speed to the movement
+        if (alignedSpeed > 0f) // if already jumping(on air) 
+        {
+            // subtract this velocity from the mew jump action(stable jump velocity)
+            // also if we're already going faster than the jump speed then we don't want a jump to slow us down,
+            // either subtract from the jumpspeed or don't change anything ensuring that the modified jump speed never goes negative
+            jumpSpeed = Mathf.Max(jumpSpeed - velocity.y, 0f);
+        }
+
+        velocity += jumpDirection * jumpSpeed;
+
+    }
+
+    public void PreventSnapToGround()
+    {
+        stepsSinceLastJump = -1;
+    }
+
+    bool SnapToGround()
+    {
+        // trying to snap right after losing contact to ground
+        // if on air more than 1 physics step don't snap
+        // or don't snap if a jump is initiated just now
+        if (stepsSinceLastGrounded > 1 || stepsSinceLastJump <= 2)
+        {
+            return false;
+        }
+
+        float speed = velocity.magnitude;
+        if (speed > maxSnapSpeed) // if at high speeds our sphere gets launched anyway
+        {
+            return false;
+        }
+
+        // Use Raycasting to see if there is ground below, get info as to what we hit, exclude other spheres from raycasts
+        if (!Physics.Raycast(body.position, -upAxis, out RaycastHit hitInfo, probeDistance, probeMask, QueryTriggerInteraction.Ignore))
+        {
+            return false;
+        }
+
+        float upDot = Vector3.Dot(upAxis, hitInfo.normal);
+
+        // compare raycast info's normal(true surface normal) with minimum angle we count as ground
+        if (upDot < GetMinDot(hitInfo.collider.gameObject.layer)) // checking ground can be stairs
+        {
+            return false;
+        }
+
+        // otherwise we are considered on ground
+        groundContactCount = 1;
+        contactNormal = hitInfo.normal;
+        // Align velocity with ground
+        float dot = Vector3.Dot(velocity, hitInfo.normal);
+
+        /* 
+         * At this point we are still floating above the ground, but gravity will take care of pulling us down to the surface.
+         * the velocity might already point somewhat down, in which case realigning it would slow convergence to the ground. 
+         * So we should only adjust the velocity when the dot product of it and the surface normal is positive.
+         */
+        if (dot > 0f)
+        {
+            velocity = (velocity - hitInfo.normal * dot).normalized * speed;
+        }
+
+        // When ground detected get its rigidbody
+        connectedBody = hitInfo.rigidbody;
+
+        return true;
     }
 
     private void OnCollisionEnter(Collision collision)
@@ -446,46 +651,26 @@ public class MovingSphere : MonoBehaviour
 
         Vector3 relativeVelocity = velocity - connectionVelocity;
 
-        // Project the current velocity on both vectors to get the relative X and Z speeds.
-        float currentX = Vector3.Dot(relativeVelocity, xAxis);
-        float currentZ = Vector3.Dot(relativeVelocity, zAxis);
+        Vector3 adjustment;
+        adjustment.x = playerInput.x * speed - Vector3.Dot(relativeVelocity, xAxis);
+        adjustment.z = playerInput.z * speed - Vector3.Dot(relativeVelocity, zAxis);
+        adjustment.y = Swimming ? playerInput.y * speed - Vector3.Dot(relativeVelocity, upAxis) : 0f;
 
-      
-        float maxSpeedChange = acceleration * Time.deltaTime;
-
-        // Calculate new X and Z speeds relative to the ground
-        float newX = Mathf.MoveTowards(currentX, playerInput.x * speed, maxSpeedChange);
-        float newZ = Mathf.MoveTowards(currentZ, playerInput.y * speed, maxSpeedChange);
-
+        adjustment = Vector3.ClampMagnitude(adjustment, acceleration * Time.deltaTime);       
+        
         // Adjust the velocity by adding the differences between the new and old speeds along the relative axes.
-        velocity += xAxis * (newX - currentX) + zAxis * (newZ - currentZ);
+        velocity += xAxis * adjustment.x + zAxis * adjustment.z;
 
         if (Swimming)
         {
-            float currentY = Vector3.Dot(relativeVelocity, upAxis);
-            float newY = Mathf.MoveTowards(currentY, playerInput.z * speed, maxSpeedChange);
-            velocity += upAxis * (newY - currentY);
+            velocity += upAxis * adjustment.y;
         }
     }
 
-    // return true if steep contacts are converted into a virtual ground normal 
-    bool CheckSteepContacts()
-    {
-        if (steepContactCount > 1) // if multiple steep surfaces present
-        {
-            steepNormal.Normalize();
-            
-            float upDot = Vector3.Dot(upAxis, steepNormal);
-            if (upDot >= minGroundDotProduct) // check if the result can be classified as ground
-            {
-                steepContactCount = 0;
-                groundContactCount = 1;
-                contactNormal = steepNormal;
-                return true; // conversion accomplished
-            }
-        }
-        return false; // failed
-    }
+ 
+
+
+
 
     // returns appropriate minimum for a given layer 
     float GetMinDot(int layer)
@@ -499,182 +684,12 @@ public class MovingSphere : MonoBehaviour
 
     }
 
-    void Jump(Vector3 gravity) 
+    // Need to project directions on a plane to make Axes relative to ground we are on
+    Vector3 ProjectDirectionOnPlane(Vector3 direction, Vector3 normal)
     {
-        Vector3 jumpDirection;
-
-        if (OnGround)
-        {
-            jumpDirection = contactNormal;
-        }
-        else if (OnSteep)
-        {
-            jumpDirection = steepNormal;
-            jumpPhase = 0; // reset air jumps
-        }
-        else if (maxAirJumps > 0 && jumpPhase <= maxAirJumps) // if able to jump 
-        {
-            if(jumpPhase == 0) // prevent extra air jump while falling off a surface without jumping
-            {
-                jumpPhase = 1;
-            }
-
-            jumpDirection = contactNormal;
-        }
-        else
-        {
-            return;
-        }
-
-        stepsSinceLastJump = 0; // jumping, so reset
-        jumpPhase += 1;
-            
-        float jumpSpeed = Mathf.Sqrt(2f * gravity.magnitude * jumpHeight);
-
-        if (InWater)
-        {
-            jumpSpeed += Mathf.Max(0f, 1f - submergence / swimTreshold);
-        }
-
-        // this way we get upward momentum while wall jumping, ground won't be affected
-        jumpDirection = (jumpDirection + upAxis).normalized;
-
-        float alignedSpeed = Vector3.Dot(velocity, jumpDirection);
-            
-         // We don't want limitless jumpspeed which means,
-        // repeated jumping shouldn't add more speed to the movement
-        if(alignedSpeed > 0f) // if already jumping(on air) 
-        {
-            // subtract this velocity from the mew jump action(stable jump velocity)
-            // also if we're already going faster than the jump speed then we don't want a jump to slow us down,
-            // either subtract from the jumpspeed or don't change anything ensuring that the modified jump speed never goes negative
-            jumpSpeed = Mathf.Max(jumpSpeed - velocity.y, 0f);
-        }
-
-        velocity += jumpDirection * jumpSpeed;
-        
+        return (direction - normal * Vector3.Dot(direction, normal)).normalized;
     }
 
-    public void PreventSnapToGround()
-    {
-        stepsSinceLastJump = -1;
-    }
-
-    bool SnapToGround() 
-    {
-        // trying to snap right after losing contact to ground
-        // if on air more than 1 physics step don't snap
-        // or don't snap if a jump is initiated just now
-        if (stepsSinceLastGrounded > 1 || stepsSinceLastJump <= 2)
-        {
-            return false;
-        }
-
-        float speed = velocity.magnitude;
-        if(speed > maxSnapSpeed) // if at high speeds our sphere gets launched anyway
-        {
-            return false;
-        }
-
-        // Use Raycasting to see if there is ground below, get info as to what we hit, exclude other spheres from raycasts
-        if(!Physics.Raycast(body.position, -upAxis, out RaycastHit hitInfo, probeDistance, probeMask, QueryTriggerInteraction.Ignore))
-        {
-            return false;
-        }
-
-        float upDot = Vector3.Dot(upAxis, hitInfo.normal);
-
-        // compare raycast info's normal(true surface normal) with minimum angle we count as ground
-        if (upDot < GetMinDot(hitInfo.collider.gameObject.layer)) // checking ground can be stairs
-        {
-            return false;
-        }
-
-        // otherwise we are considered on ground
-        groundContactCount = 1;
-        contactNormal = hitInfo.normal;
-        // Align velocity with ground
-        float dot = Vector3.Dot(velocity, hitInfo.normal);
-
-        /* 
-         * At this point we are still floating above the ground, but gravity will take care of pulling us down to the surface.
-         * the velocity might already point somewhat down, in which case realigning it would slow convergence to the ground. 
-         * So we should only adjust the velocity when the dot product of it and the surface normal is positive.
-         */
-        if (dot > 0f) 
-        {
-            velocity = (velocity - hitInfo.normal * dot).normalized * speed;
-        }
-
-        // When ground detected get its rigidbody
-        connectedBody = hitInfo.rigidbody;
-
-        return true;
-    }
-
-    void BasicBouncySphereWithinArea(Vector2 playerInput)
-    {
-
-        // Just normalizing the input makes the values between 0 and 1 inaccessible, but this way range[0,1] is accessible
-        playerInput = Vector2.ClampMagnitude(playerInput, 1f);
-
-        // acceleration makes movement smoother but less responsive!
-        Vector3 desiredVelocity = new Vector3(playerInput.x, 0f, playerInput.y) * maxSpeed;
-
-        float maxSpeedChange = maxAcceleration * Time.deltaTime;
-
-        velocity.x = Mathf.MoveTowards(velocity.x, desiredVelocity.x, maxSpeedChange);
-        velocity.z = Mathf.MoveTowards(velocity.z, desiredVelocity.z, maxSpeedChange);
-
-        // using speed formulas in physics
-        Vector3 displacement = velocity * Time.deltaTime;
-
-        Vector3 newPosition = transform.localPosition + displacement;
-
-        // if new position is not within the rectangle
-        if (!allowedArea.Contains(new Vector2(newPosition.x, newPosition.z)))
-        {
-            // We need to give it a new Vector2 because contains only checks x,y in Vector3 we would sent
-            if (newPosition.x < allowedArea.xMin)
-            {
-                newPosition.x = allowedArea.xMin; // Make it stay inside
-                velocity.x = -velocity.x * bounciness; // Make it bounce away 
-            }
-            else if (newPosition.x > allowedArea.xMax)
-            {
-                newPosition.x = allowedArea.xMax;
-                velocity.x = -velocity.x * bounciness;
-            }
-            if (newPosition.z < allowedArea.yMin)
-            {
-                newPosition.z = allowedArea.yMin;
-                velocity.z = -velocity.z * bounciness;
-            }
-            else if (newPosition.z > allowedArea.yMax)
-            {
-                newPosition.z = allowedArea.yMax;
-                velocity.z = -velocity.z * bounciness;
-            }
-        }
-
-        transform.localPosition = newPosition;
-
-    }
-
-
-    // Just to see how key inputs work 
-    void JoystickBehavior(Vector2 playerInput)
-    {
-        // Normalizing the input so that even using keyboard, input behaves like a joystick would ()
-        // playerInput.Normalize();
-
-        // Just normalizing the input makes the values between 0 and 1 inaccessible, but this way range[0,1] is accessible
-        playerInput = Vector2.ClampMagnitude(playerInput, 1f);
-
-        // Use the sphere to display the max ranges of inputs
-        transform.localPosition = new Vector3(playerInput.x, 0.5f, playerInput.y);
-
-    }
 
     // Color Spheres if multiple ground contacts present
     void ColorOnGroundContacts()
